@@ -1,0 +1,96 @@
+{
+  "live_channels": [
+    {
+      "name": "Al Jazeera Live",
+      "url": "https://www.youtube.com/@aljazeeraenglish"
+    },
+    {
+      "name": "TRT World",
+      "url": "https://www.youtube.com/@trtworld/live"
+    },
+    {
+      "name": "FRANCE 24 English",
+      "url": "https://www.youtube.com/@France24_en/live"
+    },
+    {
+      "name": "Sky News",
+      "url": "https://www.youtube.com/@SkyNews/live"
+    },
+    {
+      "name": "Euro News",
+      "url": "https://www.youtube.com/@euronews/live"
+    },
+    {
+      "name": "DW News",
+      "url": "https://www.youtube.com/@dwnews/live"
+    },
+    {
+      "name": "CBS News",
+      "url": "https://www.youtube.com/@CBSNews/live"
+    },
+    {
+      "name": "NBC News",
+      "url": "https://www.youtube.com/@NBCNews/live"
+    },
+    {
+      "name": "Live Now FOX",
+      "url": "https://www.youtube.com/@livenowfox/live"
+    },
+    {
+      "name": "Times Now LIVE",
+      "url": "https://www.youtube.com/@TimesNow/live"
+    },
+    {
+      "name": "CNN NEWS 18 LIVE",
+      "url": "https://www.youtube.com/@cnnnews18/live"
+    },
+    {
+      "name": "The Why Files Backstage LIVE",
+      "url": "https://www.youtube.com/@TheWhyFilesBackstage/live"
+    },
+    {
+      "name": "Best of Nostalgia LIVE",
+      "url": "https://www.youtube.com/@bestofnostalgia/live"
+    },
+    {
+      "name": "Too Music",
+      "url": "https://www.youtube.com/@toomusicc/live"
+    },
+    {
+      "name": "RITUALS DEEP MUSIC",
+      "url": "https://www.youtube.com/channel/UCOv__nnHealpxm75hhXu5NQ/live"
+    },
+    {
+      "name": "Midnight Bear Radio",
+      "url": "https://www.youtube.com/@MidnightBearRadio/live"
+    },
+    {
+      "name": "Trance Melodies Official",
+      "url": "https://www.youtube.com/@DeepHypnora/live"
+    },
+    {
+      "name": "Deep Hypnora LIVE",
+      "url": "https://www.youtube.com/@TranceMelodiesOfficial/live"
+    },
+    {
+      "name": "RADIO STIL  LIVE",
+      "url": "https://www.youtube.com/@StilRadioOfficial/live"
+    },
+    {
+      "name": "NASA Live",
+      "url": "https://www.youtube.com/@NASA/live"
+    },
+    {
+      "name": "NASA Spaceflight Live",
+      "url": "https://www.youtube.com/@NASASpaceflight/live"
+    },
+    {
+      "name": "SkylineWebcams Live",
+      "url": "https://www.youtube.com/@SkylineWebcams/live"
+    },
+    {
+      "name": "I Love You Venice Live",
+      "url": "https://www.youtube.com/@iloveyouvenice/live"
+    }
+  ]
+}
