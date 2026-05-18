@@ -3,7 +3,7 @@
 
 ######### Only This 2 lines to edit with new version ######
 version='1.0'
-changelog='\nInitial public release\nAdded YouTube Jukebox with Smart Cache'
+changelog='\nInitial public release\nAdded YouTube Jukebox with Smart Cache and OpenPLi Fix'
 ##############################################################
 
 # Check if we should skip restart (for batch installations)
@@ -17,12 +17,11 @@ else
 	PLUGINPATH=/usr/lib64/enigma2/python/Plugins/Extensions/CiefpYouTube
 fi
 
-# Check package manager status
+# Check package manager status (FIXED duplicate line)
 if [ -f /var/lib/dpkg/status ]; then
 	STATUS=/var/lib/dpkg/status
 	OSTYPE=DreamOs
 else
-	STATUS=/var/ those /lib/opkg/status
 	STATUS=/var/lib/opkg/status
 	OSTYPE=Dream
 fi
@@ -31,15 +30,24 @@ echo ""
 echo "Checking dependencies for CiefpYouTube..."
 echo ""
 
-# 1. Provera i instalacija za yt-dlp (Ključna stvar za plugin)
-if which yt-dlp > /dev/null 2>&1; then
-	echo "[CiefpYouTube] yt-dlp is already installed."
+# 1. Provera i instalacija za yt-dlp (Sa naprednim fallback-om za OpenPLi preko pip3)
+if python3 -c "import yt_dlp" > /dev/null 2>&1; then
+	echo "[CiefpYouTube] Python module 'yt-dlp' is already working."
 else
-	echo "[CiefpYouTube] yt-dlp is missing! Installing..."
+	echo "[CiefpYouTube] yt-dlp module is missing! Trying opkg/apt first..."
 	if [ $OSTYPE = "DreamOs" ]; then
 		apt-get update && apt-get install yt-dlp -y
 	else
 		opkg update && opkg install yt-dlp
+	fi
+	
+	# OpenPLi FIX: Ako opkg nije uspeo da postavi ispravan modul, instaliramo ga preko pip3
+	if ! python3 -c "import yt_dlp" > /dev/null 2>&1; then
+		echo "[CiefpYouTube] opkg install failed to provision the module. Applying OpenPLi pip3 fix..."
+		if [ $OSTYPE != "DreamOs" ]; then
+			opkg update && opkg install python3-pip python3-codecs python3-core
+			pip3 install yt-dlp
+		fi
 	fi
 fi
 
@@ -58,10 +66,8 @@ fi
 # 3. Provera i instalacija za python3-json (potrebno za čuvanje plejlista)
 if grep -qs "Package: python3-json" $STATUS ; then
 	echo "[CiefpYouTube] python3-json is already installed."
-	
 else
 	if [ $OSTYPE != "DreamOs" ]; then
-		# Opkg slike često traže eksplicitan json paket ako nije u core-u
 		if opkg list-installed | grep -q "python3-json"; then
 			echo "[CiefpYouTube] python3-json is present."
 		else
