@@ -2,8 +2,8 @@
 ##setup command=wget -q "--no-check-certificate" https://raw.githubusercontent.com/ciefp/CiefpYouTube/main/installer.sh -O - | /bin/sh
 
 ######### Only This 2 lines to edit with new version ######
-version='1.0'
-changelog='\nInitial public release\nAdded YouTube Jukebox with Smart Cache and OpenPLi Fix'
+version='1.1'
+changelog='\nFixed universal yt-dlp installation for OpenATV 7.6/8.0+, OpenPLi and others'
 ##############################################################
 
 # Check if we should skip restart (for batch installations)
@@ -17,7 +17,7 @@ else
 	PLUGINPATH=/usr/lib64/enigma2/python/Plugins/Extensions/CiefpYouTube
 fi
 
-# Check package manager status (FIXED duplicate line)
+# Check package manager status
 if [ -f /var/lib/dpkg/status ]; then
 	STATUS=/var/lib/dpkg/status
 	OSTYPE=DreamOs
@@ -30,28 +30,96 @@ echo ""
 echo "Checking dependencies for CiefpYouTube..."
 echo ""
 
-# 1. Provera i instalacija za yt-dlp (Sa naprednim fallback-om za OpenPLi preko pip3)
-if python3 -c "import yt_dlp" > /dev/null 2>&1; then
-	echo "[CiefpYouTube] Python module 'yt-dlp' is already working."
-else
-	echo "[CiefpYouTube] yt-dlp module is missing! Trying opkg/apt first..."
-	if [ $OSTYPE = "DreamOs" ]; then
-		apt-get update && apt-get install yt-dlp -y
+# ============ DETEKCIJA OPENATV VERZIJE ============
+get_openatv_version() {
+	if [ -f /etc/image-version ]; then
+		grep -i "version=" /etc/image-version 2>/dev/null | cut -d'=' -f2 | cut -d'.' -f1,2
 	else
-		opkg update && opkg install yt-dlp
+		echo ""
+	fi
+}
+
+is_openatv8() {
+	local ver=$(get_openatv_version)
+	[[ "$ver" =~ ^8\. ]]
+}
+
+is_openatv7() {
+	local ver=$(get_openatv_version)
+	[[ "$ver" =~ ^7\. ]]
+}
+
+# ============ INSTALACIJA yt-dlp ============
+install_ytdlp() {
+	echo "[CiefpYouTube] Installing yt-dlp..."
+	
+	# OpenPLi specijalni slučaj
+	if grep -qi "openpli" /etc/issue 2>/dev/null; then
+		echo "[CiefpYouTube] OpenPLi detected - installing via pip3"
+		if [ $OSTYPE = "DreamOs" ]; then
+			apt-get update
+			apt-get install python3-pip python3-codecs python3-core -y
+		else
+			opkg update
+			opkg install python3-pip python3-codecs python3-core
+		fi
+		pip3 install yt-dlp
+		return $?
 	fi
 	
-	# OpenPLi FIX: Ako opkg nije uspeo da postavi ispravan modul, instaliramo ga preko pip3
-	if ! python3 -c "import yt_dlp" > /dev/null 2>&1; then
-		echo "[CiefpYouTube] opkg install failed to provision the module. Applying OpenPLi pip3 fix..."
-		if [ $OSTYPE != "DreamOs" ]; then
-			opkg update && opkg install python3-pip python3-codecs python3-core
-			pip3 install yt-dlp
+	# OpenATV 8.0+ koristi wrapper
+	if is_openatv8; then
+		echo "[CiefpYouTube] OpenATV 8.0+ detected - installing ytdlpwrapper"
+		if [ $OSTYPE = "DreamOs" ]; then
+			apt-get update && apt-get install enigma2-plugin-extensions-ytdlpwrapper -y
+		else
+			opkg update && opkg install enigma2-plugin-extensions-ytdlpwrapper
 		fi
+		return $?
+	fi
+	
+	# OpenATV 7.6 i stariji - standardna instalacija
+	if is_openatv7; then
+		echo "[CiefpYouTube] OpenATV 7.x detected - standard yt-dlp install"
+		if [ $OSTYPE = "DreamOs" ]; then
+			apt-get update && apt-get install yt-dlp -y
+		else
+			opkg update && opkg install yt-dlp
+		fi
+		return $?
+	fi
+	
+	# Fallback za sve ostale (Pure2, OpenSPA, itd.)
+	echo "[CiefpYouTube] Generic system - trying opkg install"
+	if [ $OSTYPE = "DreamOs" ]; then
+		apt-get update && apt-get install yt-dlp -y || {
+			echo "[CiefpYouTube] apt-get failed, trying pip3"
+			apt-get install python3-pip python3-codecs python3-core -y
+			pip3 install yt-dlp
+		}
+	else
+		opkg update && opkg install yt-dlp || {
+			echo "[CiefpYouTube] opkg failed, trying pip3"
+			opkg install python3-pip python3-codecs python3-core
+			pip3 install yt-dlp
+		}
+	fi
+}
+
+# Provera da li je yt-dlp već instaliran i radi
+if python3 -c "import yt_dlp" > /dev/null 2>&1; then
+	echo "[CiefpYouTube] yt-dlp is already working."
+else
+	install_ytdlp
+	
+	# Finalna provera
+	if ! python3 -c "import yt_dlp" > /dev/null 2>&1; then
+		echo "[CiefpYouTube] WARNING: yt-dlp module still not available!"
+		echo "[CiefpYouTube] Continuing anyway, plugin may have limited functionality."
 	fi
 fi
 
-# 2. Provera i instalacija za python3-requests
+# ============ INSTALACIJA python3-requests ============
 if grep -qs "Package: python3-requests" $STATUS ; then
 	echo "[CiefpYouTube] python3-requests is already installed."
 else
@@ -63,16 +131,11 @@ else
 	fi
 fi
 
-# 3. Provera i instalacija za python3-json (potrebno za čuvanje plejlista)
-if grep -qs "Package: python3-json" $STATUS ; then
-	echo "[CiefpYouTube] python3-json is already installed."
-else
-	if [ $OSTYPE != "DreamOs" ]; then
-		if opkg list-installed | grep -q "python3-json"; then
-			echo "[CiefpYouTube] python3-json is present."
-		else
-			opkg update && opkg install python3-json > /dev/null 2>&1
-		fi
+# ============ INSTALACIJA python3-json ============
+if [ $OSTYPE != "DreamOs" ]; then
+	if ! opkg list-installed | grep -q "python3-json"; then
+		echo "[CiefpYouTube] Installing python3-json..."
+		opkg update && opkg install python3-json > /dev/null 2>&1
 	fi
 fi
 
