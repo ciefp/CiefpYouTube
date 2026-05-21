@@ -11,7 +11,9 @@ from Components.Pixmap import Pixmap
 from Components.config import config, ConfigSubsection, ConfigSelection, ConfigText, getConfigListEntry
 from Components.ConfigList import ConfigListScreen
 from Components.Sources.StaticText import StaticText
+import urllib.parse
 import threading
+import glob
 import os
 import json
 
@@ -19,7 +21,7 @@ from .extractor import ShortsExtractor
 from .shortsplayer import CiefpShortsPlayer
 
 PLUGIN_NAME = "CiefpYouTube"
-PLUGIN_VERSION = "1.0"
+PLUGIN_VERSION = "1.1"
 USER_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/user_channels.json"
 LIVE_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/live_channels.json"
 PLAYLISTS_DIR = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/playlists/"
@@ -29,8 +31,10 @@ SETTINGS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/setting
 def load_settings():
     default_settings = {
         'quality': '1080',
-        'max_results': '30',
+        'max_results': '50',
+        'mini_skin_opacity': '50',
     }
+
     if os.path.exists(SETTINGS_FILE):
         try:
             with open(SETTINGS_FILE, 'r') as f:
@@ -51,10 +55,27 @@ def save_settings(settings):
 
 class SettingsScreen(Screen, ConfigListScreen):
     skin = """
-        <screen position="center,center" size="800,500" title="CiefpYouTube Settings" backgroundColor="#1a1a1a">
-            <widget name="config" position="20,20" size="760,400" scrollbarMode="showOnDemand" />
-            <widget name="key_red" position="20,440" size="180,40" backgroundColor="#ff0000" font="Regular;22" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" />
-            <widget name="key_green" position="210,440" size="180,40" backgroundColor="#00ff00" font="Regular;22" halign="center" valign="center" foregroundColor="#ffffff" transparent="1" />
+        <screen position="center,center" size="900,600" title="CiefpYouTube Settings" backgroundColor="#660033">
+            <widget name="config" position="30,30" size="840,440" scrollbarMode="showOnDemand" />
+
+            <!-- Bottom buttons bar -->
+            <eLabel position="20,500" size="860,70" backgroundColor="#2a2a2a" zPosition="1" />
+
+            <!-- Red button (Exit) -->
+            <eLabel position="40,515" size="30,30" backgroundColor="#ff0000" zPosition="2" />
+            <eLabel text="Exit" position="80,510" size="100,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+
+            <!-- Green button (Save) -->
+            <eLabel position="220,515" size="30,30" backgroundColor="#00ff00" zPosition="2" />
+            <eLabel text="Save" position="260,510" size="100,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+
+            <!-- Yellow button (Delete All) -->
+            <eLabel position="400,515" size="30,30" backgroundColor="#ffff00" zPosition="2" />
+            <eLabel text="Delete All" position="440,510" size="120,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+
+            <!-- Blue button (Delete Select) -->
+            <eLabel position="600,515" size="30,30" backgroundColor="#0000ff" zPosition="2" />
+            <eLabel text="Delete Sel" position="640,510" size="120,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
         </screen>
     """
 
@@ -65,7 +86,7 @@ class SettingsScreen(Screen, ConfigListScreen):
 
         self.settings = load_settings()
 
-        # Create config entries
+        # Quality choices
         self.quality_choices = [
             ("best", "Best Available (4K/8K)"),
             ("2160", "4K UHD (2160p)"),
@@ -73,6 +94,7 @@ class SettingsScreen(Screen, ConfigListScreen):
             ("720", "HD Ready (720p)")
         ]
 
+        # Results choices
         self.results_choices = [
             ("10", "10 videos"),
             ("20", "20 videos"),
@@ -86,6 +108,25 @@ class SettingsScreen(Screen, ConfigListScreen):
             ("300", "300 videos")
         ]
 
+        # Opacity choices (transparentnost)
+        self.mini_opacity_choices = [
+            ("100", "100%"),
+            ("90", "90%"),
+            ("80", "80%"),
+            ("70", "70%"),
+            ("60", "60%"),
+            ("50", "50% (Default)"),
+            ("40", "40%"),
+            ("30", "30%"),
+            ("20", "20%"),
+            ("10", "10%"),
+            ("0", "0%")
+        ]
+
+        self.mini_opacity_entry = ConfigSelection(
+            choices=self.mini_opacity_choices,
+            default=self.settings.get('mini_skin_opacity', '50'))
+
         self.quality_entry = ConfigSelection(choices=self.quality_choices, default=self.settings.get('quality', '1080'))
         self.results_entry = ConfigSelection(choices=self.results_choices,
                                              default=self.settings.get('max_results', '30'))
@@ -93,22 +134,104 @@ class SettingsScreen(Screen, ConfigListScreen):
         self.list = []
         self.list.append(getConfigListEntry("Video Quality:", self.quality_entry))
         self.list.append(getConfigListEntry("Max Results per Search:", self.results_entry))
+        self.list.append(getConfigListEntry("Mini Skin Opacity:", self.mini_opacity_entry))
 
         ConfigListScreen.__init__(self, self.list, session=self.session)
 
-        self["key_red"] = StaticText("Cancel")
+        self["key_red"] = StaticText("Exit")
         self["key_green"] = StaticText("Save")
+        self["key_yellow"] = StaticText("Delete All")
+        self["key_blue"] = StaticText("Delete Select")
 
         self["actions"] = ActionMap(["SetupActions", "ColorActions"], {
             "red": self.cancel,
             "green": self.save,
+            "yellow": self.delete_all_playlists,
+            "blue": self.delete_select_playlist,
             "cancel": self.cancel,
             "ok": self.save,
         }, -2)
 
+    def delete_all_playlists(self):
+        """Briše sve plejliste iz PLAYLISTS_DIR"""
+        if not os.path.exists(PLAYLISTS_DIR):
+            self.session.open(MessageBox, "No playlists directory found!", MessageBox.TYPE_INFO)
+            return
+
+        # Count files
+        playlist_files = glob.glob(os.path.join(PLAYLISTS_DIR, "*.json"))
+
+        if not playlist_files:
+            self.session.open(MessageBox, "No playlist files to delete!", MessageBox.TYPE_INFO)
+            return
+
+        msg = f"Are you sure you want to delete ALL {len(playlist_files)} playlist(s)?\n\nThis action cannot be undone!"
+        self.session.openWithCallback(self.confirm_delete_all, MessageBox, msg, MessageBox.TYPE_YESNO)
+
+    def confirm_delete_all(self, answer):
+        if answer:
+            deleted = 0
+            for f in glob.glob(os.path.join(PLAYLISTS_DIR, "*.json")):
+                try:
+                    os.remove(f)
+                    deleted += 1
+                except:
+                    pass
+            self.session.open(MessageBox, f"Deleted {deleted} playlist(s)!", MessageBox.TYPE_INFO)
+
+    def delete_select_playlist(self):
+        """Briše selektovanu plejlistu"""
+        if not os.path.exists(PLAYLISTS_DIR):
+            self.session.open(MessageBox, "No playlists directory found!", MessageBox.TYPE_INFO)
+            return
+
+        playlist_files = glob.glob(os.path.join(PLAYLISTS_DIR, "*.json"))
+
+        if not playlist_files:
+            self.session.open(MessageBox, "No playlist files to delete!", MessageBox.TYPE_INFO)
+            return
+
+        # Kreiraj listu za ChoiceBox
+        choices = []
+        for f in playlist_files:
+            try:
+                with open(f, 'r') as file:
+                    data = json.load(file)
+                    name = data.get("playlist_name", os.path.basename(f))
+                    choices.append((f"{name}", f))
+            except:
+                choices.append((os.path.basename(f), f))
+
+        self.session.openWithCallback(self.confirm_delete_select, ChoiceBox, title="Select playlist to delete:",
+                                      list=choices)
+
+    def confirm_delete_select(self, choice):
+        if choice:
+            filepath = choice[1]
+            try:
+                # Pročitaj ime za poruku
+                with open(filepath, 'r') as f:
+                    data = json.load(f)
+                    name = data.get("playlist_name", os.path.basename(filepath))
+
+                msg = f"Delete playlist '{name}'?"
+                self.session.openWithCallback(lambda x: self.do_delete(x, filepath, name), MessageBox, msg,
+                                              MessageBox.TYPE_YESNO)
+            except:
+                pass
+
+    def do_delete(self, answer, filepath, name):
+        if answer:
+            try:
+                os.remove(filepath)
+                self.session.open(MessageBox, f"Playlist '{name}' deleted!", MessageBox.TYPE_INFO)
+            except Exception as e:
+                self.session.open(MessageBox, f"Error deleting: {str(e)}", MessageBox.TYPE_ERROR)
+
     def save(self):
         self.settings['quality'] = self.quality_entry.value
         self.settings['max_results'] = self.results_entry.value
+        self.settings['mini_skin_opacity'] = self.mini_opacity_entry.value
         save_settings(self.settings)
         if self.callback:
             self.callback(True)
@@ -231,6 +354,12 @@ class CiefpYouTubeMainMenu(Screen):
             self.list.append(("🔴 Live Channels", "live_channels"))
         
         self.list.append(("⚙️ Edit User Channels", "edit_channels"))
+        self.list.append(("🗑️ Delete Playlists", "delete_playlists"))
+
+        # Nakon postojećih stavki, dodaj:
+        self.list.append(("─" * 40, "separator"))
+        self.list.append(("🎥 WebCam Prenj (from bouquet)", "webcam_prenj"))
+        self.list.append(("⚠️ Broken Links Log", "broken_log"))
 
         self["menu"] = MenuList(self.list)
         self["status"] = Label("")
@@ -273,6 +402,256 @@ class CiefpYouTubeMainMenu(Screen):
                 return []
 
         return []
+
+
+    def load_webcam_bouquet(self):
+        """Parsira userbouquet i vadi YouTube linkove"""
+        bouquet_path = "/etc/enigma2/userbouquet.web_cam____prenj___.tv"
+        youtube_urls = []
+
+        if not os.path.exists(bouquet_path):
+            # Prikaži poruku sa instrukcijama
+            msg = _("Userbouquet does not exist!") + "\n\n" + \
+                  _("Use the WebCamE2PrenjSF plugin to download or refresh the userbouquet.") + "\n\n" + \
+                  _("Path: /etc/enigma2/userbouquet.web_cam____prenj___.tv")
+            self.session.open(MessageBox, msg, MessageBox.TYPE_INFO)
+            return []
+
+        try:
+            with open(bouquet_path, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+
+            for i, line in enumerate(lines):
+                line = line.strip()
+
+                # Tražimo #SERVICE linije koje sadrže YT-DLP
+                if line.startswith('#SERVICE') and ('YT-DLP' in line or 'yt-dlp' in line.lower()):
+                    # Ekstrakcija URL-a iz #SERVICE linije
+                    # Format: #SERVICE 5002:0:1:0:0:0:0:0:0:0:YT-DLP%3a//https%3a//www.youtube.com/watch?v=xxxxx
+
+                    # Pronađi deo posle poslednjeg ':'
+                    parts = line.split(':')
+                    if len(parts) >= 10:
+                        url_part = parts[-1]
+
+                        # Ukloni YT-DLP:// prefiks (može biti sa %3a ili normalan)
+                        if 'YT-DLP%3a//' in url_part:
+                            url = url_part.replace('YT-DLP%3a//', '')
+                        elif 'YT-DLP://' in url_part:
+                            url = url_part.replace('YT-DLP://', '')
+                        elif 'yt-dlp%3a//' in url_part.lower():
+                            url = url_part.lower().replace('yt-dlp%3a//', '')
+                        else:
+                            url = url_part
+
+                        # Dekodiraj URL (konvertuj %3a u :, %2f u /, itd.)
+                        url = urllib.parse.unquote(url)
+
+                        # Provera da li je YouTube link
+                        if 'youtube.com/watch' in url or 'youtu.be/' in url:
+                            # Uzmi naslov iz sledeće #DESCRIPTION linije
+                            title = "YouTube Stream"
+                            if i + 1 < len(lines):
+                                next_line = lines[i + 1].strip()
+                                if next_line.startswith('#DESCRIPTION'):
+                                    title = next_line.replace('#DESCRIPTION', '').strip()
+                                    # Ukloni OFF oznake i slično
+                                    title = title.split('\\c00')[0].strip()
+                                    if title.endswith('@'):
+                                        title = title[:-1].strip()
+
+                            youtube_urls.append({
+                                'title': f"🎥 {title}",
+                                'url': url,
+                                'author': 'WebCam'
+                            })
+                            print(f"[CiefpYouTube] Found: {title} -> {url}")
+
+            # Ako nismo našli ništa na prvi način, probaj drugi metod
+            if not youtube_urls:
+                for line in lines:
+                    line = line.strip()
+                    if 'youtube.com' in line or 'youtu.be' in line:
+                        import re
+                        urls = re.findall(r'(https?://[^\s]+)', line)
+                        for url in urls:
+                            url = urllib.parse.unquote(url)
+                            if 'youtube.com/watch' in url or 'youtu.be/' in url:
+                                youtube_urls.append({
+                                    'title': 'YouTube Stream',
+                                    'url': url,
+                                    'author': 'WebCam'
+                                })
+
+        except Exception as e:
+            print(f"[CiefpYouTube] Error parsing bouquet: {e}")
+            import traceback
+            traceback.print_exc()
+            self.session.open(MessageBox, f"Error parsing bouquet:\n{str(e)}", MessageBox.TYPE_ERROR)
+            return []
+
+        print(f"[CiefpYouTube] Total YouTube URLs found: {len(youtube_urls)}")
+        return youtube_urls
+
+    def load_webcam_playlist(self, source_type):
+        """Učitava webcam buket i kreira playlistu"""
+        self["status"].setText("Loading WebCam Prenj bouquet...")
+
+        # Učitaj YouTube linkove iz buketa
+        youtube_urls = self.load_webcam_bouquet()
+
+        if not youtube_urls:
+            self.session.open(MessageBox, "No YouTube streams found in WebCam Prenj bouquet!", MessageBox.TYPE_ERROR)
+            return
+
+        # Ako ima linkova, direktno otvori plejer
+        self.session.open(CiefpShortsPlayer, youtube_urls)
+
+        # Takođe sačuvaj kao JSON za kasnije korišćenje
+        try:
+            playlist_dir = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/playlists/"
+            if not os.path.exists(playlist_dir):
+                os.makedirs(playlist_dir)
+
+            playlist_file = os.path.join(playlist_dir, "webcam_prenj.json")
+            with open(playlist_file, 'w') as f:
+                json.dump({
+                    "playlist_name": "WebCam Prenj",
+                    "videos": youtube_urls
+                }, f, indent=2)
+            print(f"[CiefpYouTube] Saved webcam playlist to {playlist_file}")
+        except Exception as e:
+            print(f"[CiefpYouTube] Error saving playlist: {e}")
+
+    def show_broken_links_log(self):
+        """Prikazuje log neaktivnih linkova"""
+        log_file = "/tmp/ciefp_youtube_broken_links.log"
+
+        if not os.path.exists(log_file):
+            self.session.open(MessageBox, "No broken links log found!\n\nLog file will be created when a stream fails.",
+                              MessageBox.TYPE_INFO)
+            return
+
+        try:
+            with open(log_file, 'r') as f:
+                content = f.read()
+
+            if not content.strip():
+                self.session.open(MessageBox, "Log file is empty - no broken links recorded yet.", MessageBox.TYPE_INFO)
+                return
+
+            # Prikaži poslednjih 50 linija (da ne bude preveliko)
+            lines = content.split('\n')
+            last_lines = lines[-50:] if len(lines) > 50 else lines
+            preview = '\n'.join(last_lines)
+
+            # Opcije za log
+            choices = [
+                ("📋 View log", "view"),
+                ("🗑️ Clear log", "clear"),
+                ("📂 Full log path", "path")
+            ]
+            self.session.openWithCallback(self.broken_log_callback, ChoiceBox, title="Broken Links Log", list=choices)
+
+        except Exception as e:
+            self.session.open(MessageBox, f"Error reading log: {str(e)}", MessageBox.TYPE_ERROR)
+
+    def broken_log_callback(self, choice):
+        if not choice:
+            return
+
+        action = choice[1]
+        log_file = "/tmp/ciefp_youtube_broken_links.log"
+
+        if action == "view":
+            try:
+                with open(log_file, 'r') as f:
+                    content = f.read()
+                # Prikaži u MessageBox-u (ograniči dužinu)
+                if len(content) > 3000:
+                    content = content[-3000:] + "\n\n... (truncated)"
+                self.session.open(MessageBox, content, MessageBox.TYPE_INFO)
+            except:
+                pass
+
+        elif action == "clear":
+            try:
+                with open(log_file, 'w') as f:
+                    f.write("")
+                self.session.open(MessageBox, "Log file cleared!", MessageBox.TYPE_INFO)
+            except:
+                pass
+
+        elif action == "path":
+            self.session.open(MessageBox, f"Log file location:\n{log_file}", MessageBox.TYPE_INFO)
+
+    def delete_playlists_menu(self):
+        """Otvara meni za brisanje plejlisti"""
+        if not os.path.exists(PLAYLISTS_DIR):
+            self.session.open(MessageBox, "No playlists directory found!", MessageBox.TYPE_INFO)
+            return
+
+        playlist_files = glob.glob(os.path.join(PLAYLISTS_DIR, "*.json"))
+
+        if not playlist_files:
+            self.session.open(MessageBox, "No playlist files to delete!", MessageBox.TYPE_INFO)
+            return
+
+        # Kreiraj listu za ChoiceBox
+        choices = [("Delete ALL playlists", "all")]
+        choices.append(("─" * 40, "separator"))
+
+        for f in playlist_files:
+            try:
+                with open(f, 'r') as file:
+                    data = json.load(file)
+                    name = data.get("playlist_name", os.path.basename(f))
+                    choices.append((f"🗑️ {name}", f))
+            except:
+                choices.append((f"🗑️ {os.path.basename(f)}", f))
+
+        self.session.openWithCallback(self.delete_playlists_callback, ChoiceBox, title="Delete Playlists:",
+                                      list=choices)
+
+    def delete_playlists_callback(self, choice):
+        if not choice:
+            return
+
+        if choice[1] == "all":
+            # Obriši sve
+            msg = f"Delete ALL playlists?"
+            self.session.openWithCallback(self.confirm_delete_all_playlists, MessageBox, msg, MessageBox.TYPE_YESNO)
+        elif choice[1] != "separator":
+            # Obriši jedan fajl
+            filepath = choice[1]
+            try:
+                with open(filepath, 'r') as f:
+                    data = json.load(f)
+                    name = data.get("playlist_name", os.path.basename(filepath))
+                msg = f"Delete playlist '{name}'?"
+                self.session.openWithCallback(lambda x: self.delete_single_playlist(x, filepath, name), MessageBox, msg,
+                                              MessageBox.TYPE_YESNO)
+            except:
+                pass
+
+    def confirm_delete_all_playlists(self, answer):
+        if answer:
+            deleted = 0
+            for f in glob.glob(os.path.join(PLAYLISTS_DIR, "*.json")):
+                try:
+                    os.remove(f)
+                    deleted += 1
+                except:
+                    pass
+            self.session.open(MessageBox, f"Deleted {deleted} playlist(s)!", MessageBox.TYPE_INFO)
+
+    def delete_single_playlist(self, answer, filepath, name):
+        if answer:
+            try:
+                os.remove(filepath)
+                self.session.open(MessageBox, f"Playlist '{name}' deleted!", MessageBox.TYPE_INFO)
+            except Exception as e:
+                self.session.open(MessageBox, f"Error deleting: {str(e)}", MessageBox.TYPE_ERROR)
 
     def saveUserChannels(self, channels):
         try:
@@ -368,8 +747,14 @@ Created by Ciefp
                 self.showUserChannels()
             elif source_type == "edit_channels":
                 self.editUserChannels()
+            elif source_type == "delete_playlists":
+                self.delete_playlists_menu()
             elif source_type == "live_channels":
                 self.showLiveChannels()
+            elif source_type == "webcam_prenj":
+                self.load_webcam_playlist(source_type)
+            elif source_type == "broken_log":
+                self.show_broken_links_log()
             else:
                 self["status"].setText(f"Loading {current[0]}...")
                 threading.Thread(target=self.loadVideos, args=(source_type, current[0]), daemon=True).start()
