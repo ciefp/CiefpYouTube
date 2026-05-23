@@ -60,13 +60,17 @@ def load_quality_setting():
 
 def get_video_format(quality):
     if quality == "2160":
-        return 'best[height<=2160][vcodec!=none][acodec!=none]/best'
+        return 'best[height<=2160][ext=mp4]/best'
+    elif quality == "1440":
+        return 'best[height<=1440][ext=mp4]/best'
     elif quality == "1080":
-        return 'best[height<=1080][vcodec!=none][acodec!=none]/best'
+        return 'best[height<=1080][ext=mp4]/best'
     elif quality == "720":
-        return 'best[height<=720][vcodec!=none][acodec!=none]/best'
+        return 'best[height<=720][ext=mp4]/best'
+    elif quality == "480":
+        return 'best[height<=480][ext=mp4]/best'
     else:
-        return 'best[vcodec!=none][acodec!=none]/best'
+        return 'best[ext=mp4]/best'
 
 def log_broken_link(url, title, error_msg=""):
     """Loguje neaktivne linkove u fajl"""
@@ -98,6 +102,7 @@ class CiefpShortsPlayer(Screen):
 
     def __init__(self, session, playlist):
         Screen.__init__(self, session)
+        self.session = session  # DODAJ OVO
         self.playlist = playlist
         self.index = 0
 
@@ -215,18 +220,105 @@ class CiefpPlaylistPlayer(Screen):
         # Kreiraj dinamički skin
         self.skin = f"""
         <screen position="0,0" size="1920,160" title="CiefpYouTube Playlist" backgroundColor="#ff000000" flags="wfNoBorder">
-            <eLabel position="0,0" size="1920,160" backgroundColor="#{alpha_hex}00000e" zPosition="1" />
-            <eLabel text="NOW PLAYING:" position="50,20" size="180,40" font="Regular;22" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
-            <widget name="title" position="240,15" size="1630,50" font="Regular;30" foregroundColor="#ffffff" backgroundColor="#{alpha_hex}00000e" transparent="1" zPosition="2" />
-            <eLabel text="NEXT:" position="50,75" size="180,40" font="Regular;20" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
-            <widget name="next_title" position="240,72" size="1630,40" font="Regular;24" foregroundColor="#aaaaaa" backgroundColor="#{alpha_hex}00000e" transparent="1" zPosition="2" />
-            <widget name="status" position="240,120" size="500,30" font="Regular;22" foregroundColor="#ffcc00" backgroundColor="#{alpha_hex}00000e" transparent="1" zPosition="2" />
-            <widget name="controls" position="700,120" size="1000,30" font="Regular;22" foregroundColor="#03fc1c" backgroundColor="#{alpha_hex}00000e" transparent="1" zPosition="2" />
-            <widget name="time" position="1700,120" size="200,50" font="Regular;36" halign="right" foregroundColor="#ffffff" backgroundColor="transparent" transparent="1" zPosition="2"/>
+
+            <eLabel position="0,0" size="1920,160"
+                backgroundColor="#{alpha_hex}00000e"
+                zPosition="1" />
+
+            <eLabel text="NOW PLAYING:"
+                position="50,20"
+                size="180,40"
+                font="Regular;22"
+                foregroundColor="#ffffff"
+                backgroundColor="#00000000"
+                transparent="1"
+                zPosition="2" />
+
+            <widget name="title"
+                position="240,15"
+                size="1630,50"
+                font="Regular;30"
+                foregroundColor="#ffffff"
+                backgroundColor="#{alpha_hex}00000e"
+                transparent="1"
+                zPosition="2" />
+
+            <eLabel text="NEXT:"
+                position="50,75"
+                size="180,40"
+                font="Regular;20"
+                foregroundColor="#ffffff"
+                backgroundColor="#00000000"
+                transparent="1"
+                zPosition="2" />
+
+            <widget name="next_title"
+                position="240,72"
+                size="1200,40"
+                font="Regular;24"
+                foregroundColor="#aaaaaa"
+                backgroundColor="#{alpha_hex}00000e"
+                transparent="1"
+                zPosition="2" />
+                
+            <!-- PLAYLIST INFO -->
+                <widget name="playlist_info"
+                position="50,120"
+                size="300,30"
+                font="Regular;22"
+                foregroundColor="#00ffcc"
+                backgroundColor="transparent"
+                transparent="1"
+                zPosition="2" />
+
+            <!-- STATUS -->
+            <widget name="status"
+                position="900,120"
+                size="500,30"
+                font="Regular;22"
+                halign="right"
+                foregroundColor="#ffcc00"
+                backgroundColor="transparent"
+                transparent="1"
+                zPosition="2" />    
+
+            <!-- CONTROLS -->
+            <widget name="controls"
+                position="240,120"
+                size="700,30"
+                font="Regular;22"
+                foregroundColor="#03fc1c"
+                backgroundColor="#{alpha_hex}00000e"
+                transparent="1"
+                zPosition="2" />
+
+            <!-- COUNTDOWN -->
+            <widget name="duration"
+                position="1400,115"
+                size="180,40"
+                font="Regular;30"
+                halign="right"
+                foregroundColor="#00ffcc"
+                backgroundColor="transparent"
+                transparent="1"
+                zPosition="2"/>
+
+            <!-- CLOCK -->
+            <widget name="time"
+                position="1600,110"
+                size="300,50"
+                font="Regular;36"
+                halign="right"
+                foregroundColor="#ffffff"
+                backgroundColor="transparent"
+                transparent="1"
+                zPosition="2"/>
+
         </screen>
         """
 
         Screen.__init__(self, session)
+
         self.playlist = playlist
         self.index = start_index
         self.play_count = 0
@@ -234,8 +326,10 @@ class CiefpPlaylistPlayer(Screen):
         self["title"] = Label("Loading...")
         self["next_title"] = Label("")
         self["status"] = Label("")
+        self["playlist_info"] = Label("")
         self["controls"] = Label("OK: Pause | ▲/▼: Previous/Next | EXIT: Exit playlist")
         self["time"] = Label("")
+        self["duration"] = Label("--:--")
 
         self["actions"] = ActionMap(["SetupActions", "DirectionActions"], {
             "cancel": self.handleExit,
@@ -249,15 +343,16 @@ class CiefpPlaylistPlayer(Screen):
         self.time_timer.callback.append(self.updateTime)
         self.time_timer.start(1000)
 
-
-        # Inicijalizacija tajmera
+        # Playlist timer
         self.playlist_timer = eTimer()
+
         try:
             self.playlist_timer.callback.append(self.playlistTimerCallback)
         except:
             self.playlist_timer.timeout.connect(self.playlistTimerCallback)
 
         self.startExtraction()
+
 
     def updateTime(self):
         try:
@@ -289,7 +384,9 @@ class CiefpPlaylistPlayer(Screen):
         else:
             self["next_title"].setText("End playlist")
 
-        self["status"].setText(f"Song: {self.index + 1} od {len(self.playlist)}")
+        self["playlist_info"].setText(
+            f"Song: {self.index + 1} out of  {len(self.playlist)}"
+        )
 
         threading.Thread(target=self.extractThread, args=(url, title), daemon=True).start()
 
@@ -327,17 +424,22 @@ class CiefpPlaylistPlayer(Screen):
         try:
             ref = eServiceReference(5002, 0, video_url)
             ref.setName(title)
+
             self.session.nav.playService(ref)
 
-            # Pokrećemo tajmer da proverava na svakih 1.5 sekundi (1500ms) kao u CiefpVibes
-            self.playlist_timer.start(1500, False)
+            # Stream krenuo -> skloni loading poruku
+            self["status"].setText("")
+
+            # Pokreni playlist timer
+            self.playlist_timer.start(1000, False)
+
         except Exception as e:
             print(f"[CiefpYouTube] Startup error: {e}")
 
     def playlistTimerCallback(self):
         self.play_count += 1
         # Pustimo prvih 8 krugova (oko 12 sekundi) da se strim i bafer potpuno smire
-        if self.play_count < 8:
+        if self.play_count < 2:
             return
 
         try:
@@ -352,12 +454,32 @@ class CiefpPlaylistPlayer(Screen):
             if seek:
                 length = seek.getLength()
                 position = seek.getPlayPosition()
+                if not length or not position:
+                    return
+
+                if length[0] or position[0]:
+                    return
 
                 if length and position:
                     # Izračunavanje preostalog vremena (OpenATV / CiefpVibes sistem)
-                    length_secs = length[1] / 90000
-                    position_secs = position[1] / 90000
+                    length_secs = int(length[1] / 90000)
+                    position_secs = int(position[1] / 90000)
+
+                    # Zaštita od pogrešnih stream vrednosti
+                    if length_secs <= 0 or length_secs > 43200:
+                        self["duration"].setText("--:--")
+                        return
+
+                    if position_secs < 0:
+                        return
                     remaining = length_secs - position_secs
+                    if remaining < 0 or remaining > 43200:
+                        self["duration"].setText("--:--")
+                        return
+                    mins = int(remaining // 60)
+                    secs = int(remaining % 60)
+
+                    self["duration"].setText("-%02d:%02d" % (mins, secs))
 
                     # Ako je ostalo manje od 3 sekunde do kraja pesme
                     if remaining <= 3:
@@ -376,6 +498,10 @@ class CiefpPlaylistPlayer(Screen):
 
     def nextVideo(self):
         self.playlist_timer.stop()
+
+        # Poruka korisniku
+        self["status"].setText("Loading next song...")
+
         if self.index < len(self.playlist) - 1:
             self.index += 1
             self.startExtraction()

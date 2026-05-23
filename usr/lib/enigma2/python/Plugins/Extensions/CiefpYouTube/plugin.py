@@ -21,18 +21,18 @@ from .extractor import ShortsExtractor
 from .shortsplayer import CiefpShortsPlayer
 
 PLUGIN_NAME = "CiefpYouTube"
-PLUGIN_VERSION = "1.1"
+PLUGIN_VERSION = "1.2"
 USER_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/user_channels.json"
 LIVE_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/live_channels.json"
 PLAYLISTS_DIR = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/playlists/"
 SETTINGS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/settings.json"
 
-# Load settings
 def load_settings():
     default_settings = {
         'quality': '1080',
         'max_results': '50',
         'mini_skin_opacity': '50',
+        'player_type': '4097',  # DODANO: default media player (4097 = GStreamer)
     }
 
     if os.path.exists(SETTINGS_FILE):
@@ -52,6 +52,10 @@ def save_settings(settings):
     except:
         return False
 
+def get_player_type():
+    """Vraća tip playera iz settings (4097, 5001 ili 5002)"""
+    settings = load_settings()
+    return settings.get('player_type', '4097')
 
 class SettingsScreen(Screen, ConfigListScreen):
     skin = """
@@ -96,31 +100,17 @@ class SettingsScreen(Screen, ConfigListScreen):
 
         # Results choices
         self.results_choices = [
-            ("10", "10 videos"),
-            ("20", "20 videos"),
-            ("30", "30 videos"),
-            ("40", "40 videos"),
-            ("50", "50 videos"),
-            ("100", "100 videos"),
-            ("150", "150 videos"),
-            ("200", "200 videos"),
-            ("250", "250 videos"),
+            ("10", "10 videos"), ("20", "20 videos"), ("30", "30 videos"),
+            ("40", "40 videos"), ("50", "50 videos"), ("100", "100 videos"),
+            ("150", "150 videos"), ("200", "200 videos"), ("250", "250 videos"),
             ("300", "300 videos")
         ]
 
-        # Opacity choices (transparentnost)
+        # Opacity choices
         self.mini_opacity_choices = [
-            ("100", "100%"),
-            ("90", "90%"),
-            ("80", "80%"),
-            ("70", "70%"),
-            ("60", "60%"),
-            ("50", "50% (Default)"),
-            ("40", "40%"),
-            ("30", "30%"),
-            ("20", "20%"),
-            ("10", "10%"),
-            ("0", "0%")
+            ("100", "100%"), ("90", "90%"), ("80", "80%"), ("70", "70%"),
+            ("60", "60%"), ("50", "50% (Default)"), ("40", "40%"),
+            ("30", "30%"), ("20", "20%"), ("10", "10%"), ("0", "0%")
         ]
 
         self.mini_opacity_entry = ConfigSelection(
@@ -131,10 +121,20 @@ class SettingsScreen(Screen, ConfigListScreen):
         self.results_entry = ConfigSelection(choices=self.results_choices,
                                              default=self.settings.get('max_results', '30'))
 
+        # DODANO: Player type choice
+        self.player_choices = [
+            ("4097", "GStreamer Media Player (Preporučeno)"),
+            ("5002", "DVB Player (Originalni)"),
+            ("5001", "Exteplayer3 (ako je instaliran ServiceApp)"),
+        ]
+        self.player_entry = ConfigSelection(choices=self.player_choices,
+                                            default=self.settings.get('player_type', '4097'))
+
         self.list = []
         self.list.append(getConfigListEntry("Video Quality:", self.quality_entry))
         self.list.append(getConfigListEntry("Max Results per Search:", self.results_entry))
         self.list.append(getConfigListEntry("Mini Skin Opacity:", self.mini_opacity_entry))
+        self.list.append(getConfigListEntry("Media Player Type:", self.player_entry))  # DODANO
 
         ConfigListScreen.__init__(self, self.list, session=self.session)
 
@@ -232,6 +232,7 @@ class SettingsScreen(Screen, ConfigListScreen):
         self.settings['quality'] = self.quality_entry.value
         self.settings['max_results'] = self.results_entry.value
         self.settings['mini_skin_opacity'] = self.mini_opacity_entry.value
+        self.settings['player_type'] = self.player_entry.value  # DODANO
         save_settings(self.settings)
         if self.callback:
             self.callback(True)
@@ -290,76 +291,78 @@ class CiefpYouTubeMainMenu(Screen):
         # Load user & live channels
         self.user_channels = self.loadUserChannels()
         self.live_channels = self.loadLiveChannels()
-        
-        # Menu options
         # Menu options
         self.list = [
             ("🔍 Search YouTube", "search"),
-            ("─" * 40, "separator"),
-            ("📂 Latest playlist (Quick open)", "saved_playlist"),
-            ("🎬 YouTube Shorts", "yt_shorts"),
-            ("🎵 YouTube Music", "yt_music"),
-            ("🎥 YouTube Trailers", "yt_trailers"),
-            ("📰 YouTube News", "yt_news"),
-            ("🎮 YouTube Gaming", "yt_gaming"),
-            ("🔥 YouTube Trending", "yt_trending"),
-            ("🔴 Live Now", "yt_live"),
-            ("🎙️ Podcasts", "yt_podcast"),
-            ("✨ New For You", "yt_new"),
 
-            ("─" * 40, "separator"),
-
-            # Zabava i humor
-            ("🤣 Comedy & Fails", "yt_comedy"),
-            ("🎬 Movie Reviews", "yt_moviereviews"),
-
-            ("─" * 40, "separator"),
-
-            # Edukacija i nauka
-            ("📚 Educational", "yt_educational"),
-            ("🔬 Science & Tech", "yt_science"),
-            ("📖 Documentaries", "yt_docs"),
-            ("💻 Programming & Tech", "yt_programming"),
-            ("📐 Mathematics & Physics", "yt_math"),
-
-            ("─" * 40, "separator"),
-
-            # Sport
-            ("⚽ Sports Highlights", "yt_sports"),
-            ("🏀 NBA/Basketball", "yt_basketball"),
-            ("⚽ Football/Soccer", "yt_football"),
-
-            ("─" * 40, "separator"),
-
-            # Životni stil
-            ("💪 Fitness & Gym", "yt_fitness"),
-            ("🎨 Art & Creativity", "yt_art"),
-            ("🏠 Home & DIY", "yt_diy"),
-            ("🍳 Cooking & Recipes", "yt_cooking"),
-
-            ("─" * 40, "separator"),
-
-            # Recenzije i putovanja
-            ("📱 Tech Reviews", "yt_tech"),
-            ("🚗 Car Reviews", "yt_cars"),
-            ("✈️ Travel Vlogs", "yt_travel"),
-            ("🐶 Animals & Pets", "yt_animals"),
-
-            ("─" * 40, "separator"),
+            # User Channels i Live Channels (odmah ispod Search)
         ]
+
         # Add User Channels category
         if self.user_channels:
             self.list.append(("📺 User Channels", "user_channels"))
         if self.live_channels:
             self.list.append(("🔴 Live Channels", "live_channels"))
-        
+        self.list.append(("📂 Latest playlist (Quick open)", "saved_playlist"))
+
+        self.list.append(("─" * 40, "separator"))
         self.list.append(("⚙️ Edit User Channels", "edit_channels"))
         self.list.append(("🗑️ Delete Playlists", "delete_playlists"))
 
-        # Nakon postojećih stavki, dodaj:
+        # Separator pa WebCam i Broken Log
         self.list.append(("─" * 40, "separator"))
         self.list.append(("🎥 WebCam Prenj (from bouquet)", "webcam_prenj"))
         self.list.append(("⚠️ Broken Links Log", "broken_log"))
+
+        # Zatim separator i ostale kategorije
+        self.list.append(("─" * 40, "separator"))
+        self.list.append(("🎬 YouTube Shorts", "yt_shorts"))
+        self.list.append(("🎵 YouTube Music", "yt_music"))
+        self.list.append(("🎥 YouTube Trailers", "yt_trailers"))
+        self.list.append(("📰 YouTube News", "yt_news"))
+        self.list.append(("🎮 YouTube Gaming", "yt_gaming"))
+        self.list.append(("🔥 YouTube Trending", "yt_trending"))
+        self.list.append(("🔴 Live Now", "yt_live"))
+        self.list.append(("🎙️ Podcasts", "yt_podcast"))
+        self.list.append(("✨ New For You", "yt_new"))
+
+        self.list.append(("─" * 40, "separator"))
+
+        # Zabava i humor
+        self.list.append(("🤣 Comedy & Fails", "yt_comedy"))
+        self.list.append(("🎬 Movie Reviews", "yt_moviereviews"))
+
+        self.list.append(("─" * 40, "separator"))
+
+        # Edukacija i nauka
+        self.list.append(("📚 Educational", "yt_educational"))
+        self.list.append(("🔬 Science & Tech", "yt_science"))
+        self.list.append(("📖 Documentaries", "yt_docs"))
+        self.list.append(("💻 Programming & Tech", "yt_programming"))
+        self.list.append(("📐 Mathematics & Physics", "yt_math"))
+
+        self.list.append(("─" * 40, "separator"))
+
+        # Sport
+        self.list.append(("⚽ Sports Highlights", "yt_sports"))
+        self.list.append(("🏀 NBA/Basketball", "yt_basketball"))
+        self.list.append(("⚽ Football/Soccer", "yt_football"))
+
+        self.list.append(("─" * 40, "separator"))
+
+        # Životni stil
+        self.list.append(("💪 Fitness & Gym", "yt_fitness"))
+        self.list.append(("🎨 Art & Creativity", "yt_art"))
+        self.list.append(("🏠 Home & DIY", "yt_diy"))
+        self.list.append(("🍳 Cooking & Recipes", "yt_cooking"))
+
+        self.list.append(("─" * 40, "separator"))
+
+        # Recenzije i putovanja
+        self.list.append(("📱 Tech Reviews", "yt_tech"))
+        self.list.append(("🚗 Car Reviews", "yt_cars"))
+        self.list.append(("✈️ Travel Vlogs", "yt_travel"))
+        self.list.append(("🐶 Animals & Pets", "yt_animals"))
 
         self["menu"] = MenuList(self.list)
         self["status"] = Label("")
