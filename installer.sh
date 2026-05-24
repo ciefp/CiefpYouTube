@@ -2,8 +2,8 @@
 ##setup command=wget -q "--no-check-certificate" https://raw.githubusercontent.com/ciefp/CiefpYouTube/main/installer.sh -O - | /bin/sh
 
 ######### Only This 2 lines to edit with new version ######
-version='1.1'
-changelog='\nFixed universal yt-dlp installation for OpenATV 7.6/8.0+, OpenPLi and others'
+version='1.2'
+changelog='\nAdded ffmpeg and yt-dlp installation for FHD/4K support on all images'
 ##############################################################
 
 # Check if we should skip restart (for batch installations)
@@ -27,7 +27,9 @@ else
 fi
 
 echo ""
-echo "Checking dependencies for CiefpYouTube..."
+echo "============================================================="
+echo "     CiefpYouTube v$version Installer"
+echo "============================================================="
 echo ""
 
 # ============ DETEKCIJA OPENATV VERZIJE ============
@@ -48,61 +50,83 @@ is_openatv7() {
 	local ver=$(get_openatv_version)
 	[[ "$ver" =~ ^7\. ]]
 }
+
+# ============ INSTALACIJA ffmpeg (obavezno za 4K) ============
+install_ffmpeg() {
+	echo "[CiefpYouTube] Installing ffmpeg (required for 4K/FHD)..."
+	
+	if [ $OSTYPE = "DreamOs" ]; then
+		apt-get update && apt-get install ffmpeg -y
+	else
+		opkg update && opkg install ffmpeg
+	fi
+	
+	# Provjeri da li je ffmpeg uspješno instaliran
+	if command -v ffmpeg >/dev/null 2>&1; then
+		echo "[CiefpYouTube] ffmpeg installed successfully: $(ffmpeg -version | head -1)"
+	else
+		echo "[CiefpYouTube] WARNING: ffmpeg installation failed - 4K may not work!"
+	fi
+}
+
 # ============ INSTALACIJA yt-dlp ============
 install_ytdlp() {
 	echo "[CiefpYouTube] Installing yt-dlp..."
-
-	# Provera da li je OpenPLi ILI OpenATV 8.0+
-	if grep -qi "openpli" /etc/issue 2>/dev/null || is_openatv8; then
-		if grep -qi "openpli" /etc/issue 2>/dev/null; then
-			echo "[CiefpYouTube] OpenPLi detected - installing via pip3"
-		else
-			echo "[CiefpYouTube] OpenATV 8.0+ detected - no yt-dlp in feeds, installing via pip3"
-		fi
-		
-
-		# Instalacija preko pip3
-		if [ $OSTYPE = "DreamOs" ]; then
-			apt-get update
-			apt-get install python3-pip python3-codecs python3-core -y
-		else
-			opkg update
-			opkg install python3-pip python3-codecs python3-core
-		fi
-		pip3 install yt-dlp --upgrade
-
-		# Opciono: instaliraj ytdlpwrapper ako postoji (samo za OpenATV)
-		if is_openatv8; then
-			opkg install enigma2-plugin-extensions-ytdlpwrapper 2>/dev/null
-		fi
-		return $?
-	fi
-
-	# OpenATV 7.6 i stariji - standardna opkg instalacija
-	if is_openatv7; then
-		echo "[CiefpYouTube] OpenATV 7.x detected - standard yt-dlp install"
-		if [ $OSTYPE = "DreamOs" ]; then
-			apt-get update && apt-get install yt-dlp -y
-		else
-			opkg update && opkg install yt-dlp
-		fi
-		return $?
-	fi
-
-	# Fallback za Pure2, OpenSPA, itd.
-	echo "[CiefpYouTube] Generic system - trying opkg first, then pip3"
+	
+	# Prvo pokušaj instalirati python3-yt-dlp (OpenATV 7.6+)
 	if [ $OSTYPE = "DreamOs" ]; then
-		apt-get update && apt-get install yt-dlp -y || {
+		apt-get update
+		apt-get install python3-yt-dlp -y || {
+			echo "[CiefpYouTube] python3-yt-dlp not in repo, installing via pip3..."
 			apt-get install python3-pip python3-codecs python3-core -y
-			pip3 install yt-dlp
+			pip3 install yt-dlp --upgrade
 		}
 	else
-		opkg update && opkg install yt-dlp || {
+		# OpenATV 7.6+ ima python3-yt-dlp u feedu
+		opkg update
+		opkg install python3-yt-dlp || {
+			echo "[CiefpYouTube] python3-yt-dlp not in feed, trying pip3..."
 			opkg install python3-pip python3-codecs python3-core
-			pip3 install yt-dlp
+			pip3 install yt-dlp --upgrade
 		}
 	fi
+	
+	# Provjeri da li je yt-dlp uspješno instaliran
+	if command -v yt-dlp >/dev/null 2>&1; then
+		echo "[CiefpYouTube] yt-dlp installed successfully: $(yt-dlp --version)"
+	else
+		echo "[CiefpYouTube] WARNING: yt-dlp installation failed!"
+	fi
 }
+
+# ============ INSTALACIJA Node.js (JavaScript runtime za yt-dlp) ============
+install_nodejs() {
+	echo "[CiefpYouTube] Checking for Node.js (required for YouTube JS challenges)..."
+	
+	if command -v node >/dev/null 2>&1; then
+		echo "[CiefpYouTube] Node.js already installed: $(node --version)"
+		return 0
+	fi
+	
+	echo "[CiefpYouTube] Installing Node.js..."
+	if [ $OSTYPE = "DreamOs" ]; then
+		apt-get update && apt-get install nodejs -y
+	else
+		opkg update && opkg install nodejs
+	fi
+	
+	if command -v node >/dev/null 2>&1; then
+		echo "[CiefpYouTube] Node.js installed: $(node --version)"
+		
+		# Konfiguriši yt-dlp da koristi Node.js
+		mkdir -p /home/root/.config/yt-dlp
+		echo "--js-runtimes node" > /home/root/.config/yt-dlp/config
+		echo "[CiefpYouTube] yt-dlp configured to use Node.js"
+	else
+		echo "[CiefpYouTube] WARNING: Node.js installation failed - 4K may not work!"
+	fi
+}
+
 # ============ INSTALACIJA python3-requests ============
 if grep -qs "Package: python3-requests" $STATUS ; then
 	echo "[CiefpYouTube] python3-requests is already installed."
@@ -125,6 +149,23 @@ fi
 
 echo ""
 
+# ============ INSTALACIJA KOMANDI ZA FHD/4K ============
+echo "============================================================="
+echo "     Installing FHD/4K required components..."
+echo "============================================================="
+
+# 1. Instaliraj ffmpeg
+install_ffmpeg
+
+# 2. Instaliraj yt-dlp
+install_ytdlp
+
+# 3. Instaliraj Node.js za JavaScript support
+install_nodejs
+
+echo ""
+
+# ============ INSTALACIJA PLUGINA ============
 ## Remove old tmp directory if exists
 [ -d $TMPPATH ] && rm -rf $TMPPATH > /dev/null 2>&1
 
@@ -157,8 +198,14 @@ sync
 
 echo ""
 echo "#########################################################"
-echo "#           CiefpYouTube INSTALLED SUCCESSFULLY         #"
-echo "#                  Version: $version                    #"
+echo "#           CiefpYouTube v$version INSTALLED            #"
+echo "#                                                       #"
+echo "#  Features:                                           #"
+echo "#  - FHD/4K Video Playback (requires yt-dlp + ffmpeg)  #"
+echo "#  - Playlists with Mini Skin                          #"
+echo "#  - User/Live Channels                                #"
+echo "#  - Broken Links Log                                  #"
+echo "#                                                       #"
 echo "#                  developed by ciefp                   #"
 echo "#                  .::CiefpSettings::.                  #"
 echo "#               https://github.com/ciefp                #"
