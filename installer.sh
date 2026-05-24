@@ -3,7 +3,7 @@
 
 ######### Only This 2 lines to edit with new version ######
 version='1.2'
-changelog='\nAdded ffmpeg and yt-dlp installation for FHD/4K support on all images'
+changelog='\nAdded ffmpeg, nodejs, yt-dlp-ejs and yt-dlp config for FHD/4K support on all images'
 ##############################################################
 
 # Check if we should skip restart (for batch installations)
@@ -41,19 +41,9 @@ get_openatv_version() {
 	fi
 }
 
-is_openatv8() {
-	local ver=$(get_openatv_version)
-	[[ "$ver" =~ ^8\. ]]
-}
-
-is_openatv7() {
-	local ver=$(get_openatv_version)
-	[[ "$ver" =~ ^7\. ]]
-}
-
-# ============ INSTALACIJA ffmpeg (obavezno za 4K) ============
+# ============ INSTALACIJA ffmpeg (obavezno za spajanje video/audio) ============
 install_ffmpeg() {
-	echo "[CiefpYouTube] Installing ffmpeg (required for 4K/FHD)..."
+	echo "[CiefpYouTube] Installing ffmpeg (required for video/audio merging)..."
 	
 	if [ $OSTYPE = "DreamOs" ]; then
 		apt-get update && apt-get install ffmpeg -y
@@ -61,11 +51,10 @@ install_ffmpeg() {
 		opkg update && opkg install ffmpeg
 	fi
 	
-	# Provjeri da li je ffmpeg uspješno instaliran
 	if command -v ffmpeg >/dev/null 2>&1; then
 		echo "[CiefpYouTube] ffmpeg installed successfully: $(ffmpeg -version | head -1)"
 	else
-		echo "[CiefpYouTube] WARNING: ffmpeg installation failed - 4K may not work!"
+		echo "[CiefpYouTube] WARNING: ffmpeg installation failed - FHD/4K may not work!"
 	fi
 }
 
@@ -73,7 +62,6 @@ install_ffmpeg() {
 install_ytdlp() {
 	echo "[CiefpYouTube] Installing yt-dlp..."
 	
-	# Prvo pokušaj instalirati python3-yt-dlp (OpenATV 7.6+)
 	if [ $OSTYPE = "DreamOs" ]; then
 		apt-get update
 		apt-get install python3-yt-dlp -y || {
@@ -82,7 +70,6 @@ install_ytdlp() {
 			pip3 install yt-dlp --upgrade
 		}
 	else
-		# OpenATV 7.6+ ima python3-yt-dlp u feedu
 		opkg update
 		opkg install python3-yt-dlp || {
 			echo "[CiefpYouTube] python3-yt-dlp not in feed, trying pip3..."
@@ -91,7 +78,6 @@ install_ytdlp() {
 		}
 	fi
 	
-	# Provjeri da li je yt-dlp uspješno instaliran
 	if command -v yt-dlp >/dev/null 2>&1; then
 		echo "[CiefpYouTube] yt-dlp installed successfully: $(yt-dlp --version)"
 	else
@@ -117,14 +103,106 @@ install_nodejs() {
 	
 	if command -v node >/dev/null 2>&1; then
 		echo "[CiefpYouTube] Node.js installed: $(node --version)"
-		
-		# Konfiguriši yt-dlp da koristi Node.js
-		mkdir -p /home/root/.config/yt-dlp
-		echo "--js-runtimes node" > /home/root/.config/yt-dlp/config
-		echo "[CiefpYouTube] yt-dlp configured to use Node.js"
 	else
-		echo "[CiefpYouTube] WARNING: Node.js installation failed - 4K may not work!"
+		echo "[CiefpYouTube] WARNING: Node.js installation failed - trying alternative..."
+		# Pokušaj sa deno ako node ne radi (za ARM uređaje)
+		install_deno
 	fi
+}
+
+# ============ INSTALACIJA Deno (alternativa za Node.js) ============
+install_deno() {
+	echo "[CiefpYouTube] Installing Deno as Node.js alternative..."
+	
+	# Detekcija arhitekture
+	ARCH=$(uname -m)
+	case "$ARCH" in
+		aarch64)
+			DENO_URL="https://github.com/denoland/deno/releases/download/v1.40.0/deno-aarch64-unknown-linux-gnu.zip"
+			;;
+		armv7l)
+			DENO_URL="https://github.com/denoland/deno/releases/download/v1.40.0/deno-armv7-unknown-linux-gnueabihf.zip"
+			;;
+		*)
+			DENO_URL="https://github.com/denoland/deno/releases/download/v1.40.0/deno-x86_64-unknown-linux-gnu.zip"
+			;;
+	esac
+	
+	cd /tmp
+	wget --no-check-certificate "$DENO_URL" -O deno.zip
+	unzip -o deno.zip
+	chmod +x deno
+	cp deno /usr/bin/
+	rm -f deno.zip deno
+	
+	if command -v deno >/dev/null 2>&1; then
+		echo "[CiefpYouTube] Deno installed successfully: $(deno --version | head -1)"
+		DENO_INSTALLED=true
+	else
+		echo "[CiefpYouTube] WARNING: Deno installation failed!"
+		DENO_INSTALLED=false
+	fi
+}
+
+# ============ INSTALACIJA yt-dlp-ejs (EJS challenge solver) ============
+install_ytdlp_ejs() {
+	echo "[CiefpYouTube] Installing yt-dlp-ejs (EJS challenge solver)..."
+	
+	if command -v pip3 >/dev/null 2>&1; then
+		pip3 install yt-dlp-ejs --upgrade
+	else
+		if [ $OSTYPE = "DreamOs" ]; then
+			apt-get install python3-pip -y
+		else
+			opkg install python3-pip
+		fi
+		pip3 install yt-dlp-ejs --upgrade
+	fi
+	
+	if pip3 show yt-dlp-ejs >/dev/null 2>&1; then
+		echo "[CiefpYouTube] yt-dlp-ejs installed successfully"
+	else
+		echo "[CiefpYouTube] WARNING: yt-dlp-ejs installation failed!"
+	fi
+}
+
+# ============ KREIRANJE yt-dlp CONFIG FAJLA (KLJUČNO ZA FHD/4K) ============
+create_ytdlp_config() {
+	echo "[CiefpYouTube] Creating yt-dlp configuration file..."
+	
+	mkdir -p /home/root/.config/yt-dlp
+	
+	# Osnovni config
+	cat > /home/root/.config/yt-dlp/config << 'EOF'
+# FHD/4K format - best video + best audio merged
+-f bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best
+
+# Tihi rad
+--no-warnings
+
+# Koristi samo kompatibilne formate
+--no-check-formats
+
+# Preuzmi EJS sa GitHub-a
+--remote-components ejs:github
+
+# Spajanje streamova
+--merge-output-format mp4
+EOF
+
+	# Dodaj JS runtime (node ili deno)
+	if command -v node >/dev/null 2>&1; then
+		echo "--js-runtimes node" >> /home/root/.config/yt-dlp/config
+		echo "[CiefpYouTube] yt-dlp configured to use Node.js"
+	elif command -v deno >/dev/null 2>&1; then
+		echo "--js-runtimes deno" >> /home/root/.config/yt-dlp/config
+		echo "[CiefpYouTube] yt-dlp configured to use Deno"
+	fi
+	
+	# Dodaj format sort za bolji odabir
+	echo "--format-sort res:1080,codec:av1:mp4" >> /home/root/.config/yt-dlp/config
+	
+	echo "[CiefpYouTube] yt-dlp configuration created successfully"
 }
 
 # ============ INSTALACIJA python3-requests ============
@@ -149,10 +227,11 @@ fi
 
 echo ""
 
-# ============ INSTALACIJA KOMANDI ZA FHD/4K ============
+# ============ INSTALACIJA SVIH KOMPONENTI ZA FHD/4K ============
 echo "============================================================="
 echo "     Installing FHD/4K required components..."
 echo "============================================================="
+echo ""
 
 # 1. Instaliraj ffmpeg
 install_ffmpeg
@@ -160,8 +239,14 @@ install_ffmpeg
 # 2. Instaliraj yt-dlp
 install_ytdlp
 
-# 3. Instaliraj Node.js za JavaScript support
+# 3. Instaliraj Node.js (ili Deno)
 install_nodejs
+
+# 4. Instaliraj yt-dlp-ejs
+install_ytdlp_ejs
+
+# 5. Kreiraj config fajl (OVO JE NAJVAŽNIJE!)
+create_ytdlp_config
 
 echo ""
 
@@ -201,10 +286,16 @@ echo "#########################################################"
 echo "#           CiefpYouTube v$version INSTALLED            #"
 echo "#                                                       #"
 echo "#  Features:                                           #"
-echo "#  - FHD/4K Video Playback (requires yt-dlp + ffmpeg)  #"
+echo "#  - FHD Video Playback                                #"
 echo "#  - Playlists with Mini Skin                          #"
 echo "#  - User/Live Channels                                #"
 echo "#  - Broken Links Log                                  #"
+echo "#                                                       #"
+echo "#  Installed components:                               #"
+echo "#  - ffmpeg (video/audio merging)                      #"
+echo "#  - yt-dlp (stream extractor)                         #"
+echo "#  - Node.js/Deno (JavaScript runtime)                 #"
+echo "#  - yt-dlp-ejs (EJS challenge solver)                 #"
 echo "#                                                       #"
 echo "#                  developed by ciefp                   #"
 echo "#                  .::CiefpSettings::.                  #"
