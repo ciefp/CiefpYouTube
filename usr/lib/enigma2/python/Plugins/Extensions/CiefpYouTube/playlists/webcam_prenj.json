@@ -1,5 +1,6 @@
 {
   "playlist_name": "WebCam Prenj",
+  "bouquet_version": "Prenj SF Ver.882  25.05.26   2.829 cam   @=is moving  @@=multiple link",
   "videos": [
     {
       "title": "\ud83c\udfa5 Hvar",
@@ -17,6 +18,11 @@
       "author": "WebCam"
     },
     {
+      "title": "\ud83c\udfa5 Kranjska Gora",
+      "url": "https://www.youtube.com/watch?v=-Huu1iNTpfk",
+      "author": "WebCam"
+    },
+    {
       "title": "\ud83c\udfa5 Me\u0111ugorje",
       "url": "https://www.youtube.com/watch?v=t_Lx1stFaXE",
       "author": "WebCam"
@@ -24,6 +30,11 @@
     {
       "title": "\ud83c\udfa5 Ohridsko jezero",
       "url": "https://www.youtube.com/watch?v=1ISGOTKsCDE",
+      "author": "WebCam"
+    },
+    {
+      "title": "\ud83c\udfa5 Planica",
+      "url": "https://www.youtube.com/watch?v=SIihW0koOZw",
       "author": "WebCam"
     },
     {
@@ -52,6 +63,11 @@
       "author": "WebCam"
     },
     {
+      "title": "\ud83c\udfa5 Australia Sydney",
+      "url": "https://www.youtube.com/watch?v=5uZa3-RMFos",
+      "author": "WebCam"
+    },
+    {
       "title": "\ud83c\udfa5 Austria Feratel @",
       "url": "https://www.youtube.com/watch?v=NIuO6hrFTrg",
       "author": "WebCam"
@@ -59,6 +75,11 @@
     {
       "title": "\ud83c\udfa5 Austria PanoCloud and EU @",
       "url": "https://www.youtube.com/watch?v=F2-hJqSTaUk",
+      "author": "WebCam"
+    },
+    {
+      "title": "\ud83c\udfa5 Brazil @",
+      "url": "https://www.youtube.com/watch?v=-Xtz0Jo5Ln8",
       "author": "WebCam"
     },
     {
@@ -137,6 +158,11 @@
       "author": "WebCam"
     },
     {
+      "title": "\ud83c\udfa5 Germany Now @",
+      "url": "https://www.youtube.com/watch?v=dLro-DLV9nA",
+      "author": "WebCam"
+    },
+    {
       "title": "\ud83c\udfa5 Germany Spotlight @",
       "url": "https://www.youtube.com/watch?v=aYtgGjMDagw",
       "author": "WebCam"
@@ -207,6 +233,11 @@
       "author": "WebCam"
     },
     {
+      "title": "\ud83c\udfa5 Japan Now @",
+      "url": "https://www.youtube.com/watch?v=jLm26eRhrWg",
+      "author": "WebCam"
+    },
+    {
       "title": "\ud83c\udfa5 Namibia",
       "url": "https://www.youtube.com/watch?v=ydYDqZQpim8",
       "author": "WebCam"
@@ -229,6 +260,11 @@
     {
       "title": "\ud83c\udfa5 Nepal Lukla",
       "url": "https://www.youtube.com/watch?v=kaRVui_uXa8",
+      "author": "WebCam"
+    },
+    {
+      "title": "\ud83c\udfa5 New Zealand Now @",
+      "url": "https://www.youtube.com/watch?v=J4oNJrCzyzU",
       "author": "WebCam"
     },
     {
@@ -289,11 +325,6 @@
     {
       "title": "\ud83c\udfa5 Slovakia @",
       "url": "https://www.youtube.com/watch?v=6V39eDpTyas",
-      "author": "WebCam"
-    },
-    {
-      "title": "\ud83c\udfa5 South America @",
-      "url": "https://www.youtube.com/watch?v=cDnGg7vRcpE",
       "author": "WebCam"
     },
     {
@@ -382,6 +413,11 @@
       "author": "WebCam"
     },
     {
+      "title": "\ud83c\udfa5 USA @",
+      "url": "https://www.youtube.com/watch?v=CIX9Epsgf4Q",
+      "author": "WebCam"
+    },
+    {
       "title": "\ud83c\udfa5 USA Cities @",
       "url": "https://www.youtube.com/watch?v=pisk_b_LjBU",
       "author": "WebCam"
@@ -418,12 +454,12 @@
     },
     {
       "title": "\ud83c\udfa5 World 7 @",
-      "url": "https://www.youtube.com/watch?v=wtG3HHlqhbo",
+      "url": "https://www.youtube.com/watch?v=Zl_gKWFrgpA",
       "author": "WebCam"
     },
     {
       "title": "\ud83c\udfa5 World 8 @",
-      "url": "https://www.youtube.com/watch?v=fTs-4lUqAqA",
+      "url": "https://www.youtube.com/watch?v=xeQJBMx2abw",
       "author": "WebCam"
     },
     {
@@ -437,13 +473,8 @@
       "author": "WebCam"
     },
     {
-      "title": "\ud83c\udfa5 Beograd",
-      "url": "https://www.youtube.com/watch?v=gpFqI8DD9IA",
-      "author": "WebCam"
-    },
-    {
-      "title": "\ud83c\udfa5 Crveni vrh",
-      "url": "https://www.youtube.com/watch?v=8_oxQplx7Xg",
+      "title": "\ud83c\udfa5 World 11 @",
+      "url": "https://www.youtube.com/watch?v=B7uu63Gejm0",
       "author": "WebCam"
     }
   ]

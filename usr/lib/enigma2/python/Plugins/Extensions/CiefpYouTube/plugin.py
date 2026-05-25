@@ -21,7 +21,7 @@ from .extractor import ShortsExtractor
 from .shortsplayer import CiefpShortsPlayer
 
 PLUGIN_NAME = "CiefpYouTube"
-PLUGIN_VERSION = "1.2"
+PLUGIN_VERSION = "1.3"
 USER_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/user_channels.json"
 LIVE_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/live_channels.json"
 PLAYLISTS_DIR = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/playlists/"
@@ -32,7 +32,8 @@ def load_settings():
         'quality': '1080',
         'max_results': '50',
         'mini_skin_opacity': '50',
-        'player_type': '4097',  # DODANO: default media player (4097 = GStreamer)
+        'player_type': '4097',
+        'webcam_timeout': '20',
     }
 
     if os.path.exists(SETTINGS_FILE):
@@ -120,21 +121,37 @@ class SettingsScreen(Screen, ConfigListScreen):
         self.quality_entry = ConfigSelection(choices=self.quality_choices, default=self.settings.get('quality', '1080'))
         self.results_entry = ConfigSelection(choices=self.results_choices,
                                              default=self.settings.get('max_results', '30'))
-
-        # DODANO: Player type choice
         self.player_choices = [
-            ("4097", "GStreamer Media Player (Preporučeno)"),
-            ("5002", "DVB Player (Originalni)"),
-            ("5001", "Exteplayer3 (ako je instaliran ServiceApp)"),
+            ("4097", "GStreamer Media Player (Recommended)"),
+            ("5002", "DVB Player (Original)"),
+            ("5001", "Exteplayer3 (if installed ServiceApp)"),
+            ("movieplayer", "MoviePlayer (Single play only)"),
         ]
+
         self.player_entry = ConfigSelection(choices=self.player_choices,
                                             default=self.settings.get('player_type', '4097'))
+
+        # Webcam timeout choices
+        self.webcam_timeout_choices = [
+            ("15", "15 seconds"),
+            ("20", "20 seconds"),
+            ("25", "25 seconds"),
+            ("30", "30 seconds"),
+            ("45", "45 seconds"),
+            ("60", "60 seconds"),
+        ]
+
+        self.webcam_timeout_entry = ConfigSelection(
+            choices=self.webcam_timeout_choices,
+            default=self.settings.get('webcam_timeout', '20')
+        )
 
         self.list = []
         self.list.append(getConfigListEntry("Video Quality:", self.quality_entry))
         self.list.append(getConfigListEntry("Max Results per Search:", self.results_entry))
         self.list.append(getConfigListEntry("Mini Skin Opacity:", self.mini_opacity_entry))
-        self.list.append(getConfigListEntry("Media Player Type:", self.player_entry))  # DODANO
+        self.list.append(getConfigListEntry("Media Player Type:", self.player_entry))
+        self.list.append(getConfigListEntry("Webcam Auto-Switch Timeout:", self.webcam_timeout_entry))
 
         ConfigListScreen.__init__(self, self.list, session=self.session)
 
@@ -229,14 +246,36 @@ class SettingsScreen(Screen, ConfigListScreen):
                 self.session.open(MessageBox, f"Error deleting: {str(e)}", MessageBox.TYPE_ERROR)
 
     def save(self):
+        print(f"[CiefpYouTube] Saving player_type: {self.player_entry.value}")
+        self.settings['player_type'] = self.player_entry.value
+        old_player = self.settings.get('player_type', '4097')
+        new_player = self.player_entry.value
+
         self.settings['quality'] = self.quality_entry.value
         self.settings['max_results'] = self.results_entry.value
         self.settings['mini_skin_opacity'] = self.mini_opacity_entry.value
-        self.settings['player_type'] = self.player_entry.value  # DODANO
+        self.settings['player_type'] = new_player
+        self.settings['webcam_timeout'] = self.webcam_timeout_entry.value
         save_settings(self.settings)
-        if self.callback:
-            self.callback(True)
-        self.close()
+
+        # Ako je player_type promijenjen i nije movieplayer/4097/5002
+        if old_player != new_player and new_player not in ['4097', '5002', 'movieplayer']:
+            self.session.openWithCallback(self.restartCallback, MessageBox,
+                                          "Player type changed!\n\nFor changes to take effect, Enigma2 needs to restart.\n\nRestart now?",
+                                          MessageBox.TYPE_YESNO)
+        else:
+            if self.callback:
+                self.callback(True)
+            self.close()
+
+    def restartCallback(self, answer):
+        if answer:
+            import os
+            os.system("killall -9 enigma2")  # Restart Enigme
+        else:
+            if self.callback:
+                self.callback(True)
+            self.close()
 
     def cancel(self):
         if self.callback:
@@ -312,6 +351,13 @@ class CiefpYouTubeMainMenu(Screen):
         # Separator pa WebCam i Broken Log
         self.list.append(("─" * 40, "separator"))
         self.list.append(("🎥 WebCam Prenj (from bouquet)", "webcam_prenj"))
+
+        # Dodaj verziju buketa kao posebnu liniju
+        bouquet_version = self.get_bouquet_version()
+        if bouquet_version:
+            version_display = f"📋 {bouquet_version}"
+            self.list.append((version_display, "webcam_version"))
+
         self.list.append(("⚠️ Broken Links Log", "broken_log"))
 
         # Zatim separator i ostale kategorije
@@ -406,38 +452,64 @@ class CiefpYouTubeMainMenu(Screen):
 
         return []
 
-
-    def load_webcam_bouquet(self):
-        """Parsira userbouquet i vadi YouTube linkove"""
+    def get_bouquet_version(self):
+        """Čita verziju buketa iz #NAME linije za prikaz u meniju"""
         bouquet_path = "/etc/enigma2/userbouquet.web_cam____prenj___.tv"
-        youtube_urls = []
 
         if not os.path.exists(bouquet_path):
-            # Prikaži poruku sa instrukcijama
+            return "No Userbouquet"
+
+        try:
+            with open(bouquet_path, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    if line.strip().startswith('#NAME'):
+                        version_text = line.replace('#NAME ', '').strip()
+                        # Skrati ako je predugo za prikaz u meniju (max 60 karaktera)
+                        if len(version_text) > 100:
+                            version_text = version_text[:98] + "..."
+                        return version_text
+        except Exception as e:
+            print(f"[CiefpYouTube] Error reading bouquet version: {e}")
+
+        return "Unknown version"
+
+    def load_webcam_bouquet(self):
+        """Parsira userbouquet i vadi YouTube linkove, vraća (urls, version)"""
+        bouquet_path = "/etc/enigma2/userbouquet.web_cam____prenj___.tv"
+        youtube_urls = []
+        bouquet_version = "WebCam Prenj"  # Default ako nema verzije
+
+        if not os.path.exists(bouquet_path):
             msg = _("Userbouquet does not exist!") + "\n\n" + \
                   _("Use the WebCamE2PrenjSF plugin to download or refresh the userbouquet.") + "\n\n" + \
                   _("Path: /etc/enigma2/userbouquet.web_cam____prenj___.tv")
             self.session.open(MessageBox, msg, MessageBox.TYPE_INFO)
-            return []
+            return [], ""
 
         try:
             with open(bouquet_path, 'r', encoding='utf-8', errors='ignore') as f:
                 lines = f.readlines()
 
+            # Prvo pročitaj #NAME liniju za verziju
+            # U load_webcam_bouquet
+            for line in lines:
+                if line.strip().startswith('#NAME'):
+                    name_line = line.strip()
+                    # Ukloni '#NAME ' i zadrži sve ostalo
+                    version_text = name_line.replace('#NAME ', '').strip()
+                    bouquet_version = version_text
+                    print(f"[CiefpYouTube] Bouquet version FULL: '{bouquet_version}'")
+                    break
+
+            # ... ostatak koda za parsiranje linkova (isti kao prije) ...
             for i, line in enumerate(lines):
                 line = line.strip()
 
-                # Tražimo #SERVICE linije koje sadrže YT-DLP
                 if line.startswith('#SERVICE') and ('YT-DLP' in line or 'yt-dlp' in line.lower()):
-                    # Ekstrakcija URL-a iz #SERVICE linije
-                    # Format: #SERVICE 5002:0:1:0:0:0:0:0:0:0:YT-DLP%3a//https%3a//www.youtube.com/watch?v=xxxxx
-
-                    # Pronađi deo posle poslednjeg ':'
                     parts = line.split(':')
                     if len(parts) >= 10:
                         url_part = parts[-1]
 
-                        # Ukloni YT-DLP:// prefiks (može biti sa %3a ili normalan)
                         if 'YT-DLP%3a//' in url_part:
                             url = url_part.replace('YT-DLP%3a//', '')
                         elif 'YT-DLP://' in url_part:
@@ -447,18 +519,14 @@ class CiefpYouTubeMainMenu(Screen):
                         else:
                             url = url_part
 
-                        # Dekodiraj URL (konvertuj %3a u :, %2f u /, itd.)
                         url = urllib.parse.unquote(url)
 
-                        # Provera da li je YouTube link
                         if 'youtube.com/watch' in url or 'youtu.be/' in url:
-                            # Uzmi naslov iz sledeće #DESCRIPTION linije
                             title = "YouTube Stream"
                             if i + 1 < len(lines):
                                 next_line = lines[i + 1].strip()
                                 if next_line.startswith('#DESCRIPTION'):
                                     title = next_line.replace('#DESCRIPTION', '').strip()
-                                    # Ukloni OFF oznake i slično
                                     title = title.split('\\c00')[0].strip()
                                     if title.endswith('@'):
                                         title = title[:-1].strip()
@@ -470,7 +538,7 @@ class CiefpYouTubeMainMenu(Screen):
                             })
                             print(f"[CiefpYouTube] Found: {title} -> {url}")
 
-            # Ako nismo našli ništa na prvi način, probaj drugi metod
+            # Ako nismo našli ništa, probaj drugi metod
             if not youtube_urls:
                 for line in lines:
                     line = line.strip()
@@ -491,26 +559,34 @@ class CiefpYouTubeMainMenu(Screen):
             import traceback
             traceback.print_exc()
             self.session.open(MessageBox, f"Error parsing bouquet:\n{str(e)}", MessageBox.TYPE_ERROR)
-            return []
+            return [], ""
 
         print(f"[CiefpYouTube] Total YouTube URLs found: {len(youtube_urls)}")
-        return youtube_urls
+        return youtube_urls, bouquet_version
 
     def load_webcam_playlist(self, source_type):
         """Učitava webcam buket i kreira playlistu"""
+        print("[CiefpYouTube] ========================================")
+        print("[CiefpYouTube] load_webcam_playlist CALLED")
+        print(f"[CiefpYouTube] source_type={source_type}")
+        print("[CiefpYouTube] ========================================")
+
         self["status"].setText("Loading WebCam Prenj bouquet...")
 
-        # Učitaj YouTube linkove iz buketa
-        youtube_urls = self.load_webcam_bouquet()
+        # Učitaj YouTube linkove i verziju iz buketa
+        youtube_urls, bouquet_version = self.load_webcam_bouquet()
 
         if not youtube_urls:
             self.session.open(MessageBox, "No YouTube streams found in WebCam Prenj bouquet!", MessageBox.TYPE_ERROR)
             return
 
-        # Ako ima linkova, direktno otvori plejer
-        self.session.open(CiefpShortsPlayer, youtube_urls)
+        print(
+            f"[CiefpYouTube] load_webcam_playlist: calling CiefpShortsPlayer with webcam_mode=True, {len(youtube_urls)} videos, version={bouquet_version}")
 
-        # Takođe sačuvaj kao JSON za kasnije korišćenje
+        # Ako ima linkova, direktno otvori plejer sa webcam_mode=True i verzijom
+        self.session.open(CiefpShortsPlayer, youtube_urls, webcam_mode=True, bouquet_version=bouquet_version)
+
+        # Takođe sačuvaj kao JSON za kasnije korišćenje (sa verzijom)
         try:
             playlist_dir = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/playlists/"
             if not os.path.exists(playlist_dir):
@@ -520,6 +596,7 @@ class CiefpYouTubeMainMenu(Screen):
             with open(playlist_file, 'w') as f:
                 json.dump({
                     "playlist_name": "WebCam Prenj",
+                    "bouquet_version": bouquet_version,
                     "videos": youtube_urls
                 }, f, indent=2)
             print(f"[CiefpYouTube] Saved webcam playlist to {playlist_file}")
@@ -684,23 +761,29 @@ class CiefpYouTubeMainMenu(Screen):
             )
             self["status"].setText(f"Settings updated! Quality: {self.settings.get('quality', '1080')}p, Max: {self.settings.get('max_results', '30')}")
             self["info"].setText(f"Settings: {self.settings.get('quality', '1080')}p | {self.settings.get('max_results', '30')} videos")
-    
+
     def showAbout(self):
         about_text = f"""CiefpYouTube v{PLUGIN_VERSION}
 
-YouTube Video Browser for Enigma2
+    YouTube Video Browser for Enigma2
 
-Features:
-• Search YouTube videos
-• Shorts, Music, Trailers, News, Gaming
-• Live streams, Podcasts
-• User channels (save your favorites)
-• Live channels (save your favorites)
-• Creating a playlist
-• Configurable max results
+    Features:
+    • Search YouTube videos
+    • Shorts, Music, Trailers, News, Gaming
+    • Live streams, Podcasts
+    • User channels (save your favorites)
+    • Live channels (save your favorites)
+    • Creating a playlist
+    • Configurable max results
 
-Created by Ciefp
-© 2026"""
+    Player types:
+    • GStreamer - default, works with all
+    • DVB Player - original Enigma2 player
+    • Exteplayer3 - requires ServiceApp
+    • MoviePlayer - SINGLE PLAY ONLY (full controls)
+
+    Created by Ciefp
+    © 2026"""
         self.session.open(MessageBox, about_text, MessageBox.TYPE_INFO)
 
     def selectOption(self):
@@ -744,6 +827,9 @@ Created by Ciefp
 
             if source_type == "separator":
                 return
+            elif source_type == "webcam_version":
+                # Ovo je samo informativna linija, ne radi ništa
+                return
             elif source_type == "search":
                 self.openSearch()
             elif source_type == "user_channels":
@@ -755,6 +841,7 @@ Created by Ciefp
             elif source_type == "live_channels":
                 self.showLiveChannels()
             elif source_type == "webcam_prenj":
+                print("[CiefpYouTube] selectOption: calling load_webcam_playlist")  # DODAJ OVO
                 self.load_webcam_playlist(source_type)
             elif source_type == "broken_log":
                 self.show_broken_links_log()
@@ -882,6 +969,9 @@ Created by Ciefp
         self.user_channels = self.loadUserChannels()
         self.live_channels = self.loadLiveChannels()
 
+        # Učitaj verziju buketa
+        bouquet_version = self.get_bouquet_version()
+
         new_list = [
             ("🔍 Search YouTube", "search"),
             ("─" * 40, "separator"),
@@ -930,7 +1020,16 @@ Created by Ciefp
             ("🐶 Animals & Pets", "yt_animals"),
 
             ("─" * 40, "separator"),
+
+            ("🎥 WebCam Prenj (from bouquet)", "webcam_prenj"),
         ]
+
+        # Dodaj verziju buketa kao posebnu liniju
+        if bouquet_version:
+            version_display = f"📋 {bouquet_version}"
+            new_list.append((version_display, "webcam_version"))
+
+        new_list.append(("⚠️ Broken Links Log", "broken_log"))
 
         if self.user_channels:
             new_list.append(("📺 User Channels", "user_channels"))
@@ -939,6 +1038,7 @@ Created by Ciefp
             new_list.append(("🔴 Live Channels", "live_channels"))
 
         new_list.append(("⚙️ Edit User Channels", "edit_channels"))
+        new_list.append(("🗑️ Delete Playlists", "delete_playlists"))
 
         self["menu"].setList(new_list)
         self.list = new_list
@@ -950,10 +1050,55 @@ Created by Ciefp
                 with open(filepath, 'r') as f:
                     data = json.load(f)
                     playlist = data.get("videos", [])
+                    playlist_name = data.get("playlist_name", "")
+                    bouquet_version = data.get("bouquet_version", "")  # DODAJ OVO
+
                 if playlist:
-                    self.session.open(CiefpShortsPlayer, playlist)
+                    # Provjeri da li je WebCam playlist
+                    if playlist_name == "WebCam Prenj":
+                        # Za WebCam playlistu pitaj korisnika šta želi
+                        choices = [
+                            ("Play single camera (no auto-switch)", "single"),
+                            ("Play all cameras with auto-switch", "playlist")
+                        ]
+                        self.session.openWithCallback(
+                            lambda choice: self.webcam_playlist_choice(choice, playlist, bouquet_version),
+                            ChoiceBox,
+                            title="WebCam Prenj - Select mode:",
+                            list=choices
+                        )
+                    else:
+                        # Za obične playliste normalno otvori
+                        self.session.open(CiefpShortsPlayer, playlist)
             except Exception as e:
                 print(f"[CiefpYouTube] Error opening selected list:{e}")
+
+    def webcam_playlist_choice(self, choice, playlist, bouquet_version=""):
+        """Callback za izbor načina reprodukcije WebCam liste"""
+        if not choice:
+            return
+        mode = choice[1]
+        if mode == "single":
+            choices = [(video.get('title', 'Unknown'), idx) for idx, video in enumerate(playlist)]
+            self.session.openWithCallback(
+                lambda c: self.play_single_webcam(c, playlist),
+                ChoiceBox,
+                title="Select camera to watch:",
+                list=choices
+            )
+        elif mode == "playlist":
+            self.session.open(CiefpShortsPlayer, playlist, webcam_mode=True, bouquet_version=bouquet_version)
+
+    def play_single_webcam(self, choice, playlist):
+        """Reprodukuje pojedinačnu kameru bez auto-switch"""
+        if not choice:
+            return
+
+        idx = choice[1]
+        single_video = [playlist[idx]]  # Kreiraj listu sa samo jednom kamerom
+
+        # Otvori sa webcam_mode=False da nema auto-switch
+        self.session.open(CiefpShortsPlayer, single_video, webcam_mode=False)
 
     def loadVideos(self, source_type, search_term):
         playlist = self.extractor.get_shorts_list(source_type, search_term)
