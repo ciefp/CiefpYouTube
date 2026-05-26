@@ -21,7 +21,7 @@ from .extractor import ShortsExtractor
 from .shortsplayer import CiefpShortsPlayer
 
 PLUGIN_NAME = "CiefpYouTube"
-PLUGIN_VERSION = "1.3"
+PLUGIN_VERSION = "1.4"
 USER_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/user_channels.json"
 LIVE_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/live_channels.json"
 PLAYLISTS_DIR = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/playlists/"
@@ -284,7 +284,7 @@ class SettingsScreen(Screen, ConfigListScreen):
 
 class CiefpYouTubeMainMenu(Screen):
     skin = """
-        <screen position="0,0" size="1920,1080" title="CiefpYouTube v2.1" backgroundColor="#660033" flags="wfNoBorder">
+        <screen position="0,0" size="1920,1080" title="CiefpYouTube" backgroundColor="#660033" flags="wfNoBorder">
             <eLabel position="0,0" size="1920,100" backgroundColor="#1a1a1a" zPosition="-1" />
             <eLabel text="..:: CiefpYouTube ::.." position="60,25" size="600,50" font="Regular;40" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" />
             
@@ -310,6 +310,7 @@ class CiefpYouTubeMainMenu(Screen):
             <eLabel text="ABOUT" position="795,1010" size="150,40" font="Regular;30" foregroundColor="#ffffff" backgroundColor="#1a1a1a" transparent="1" zPosition="2" />
         </screen>
     """
+
 
     def __init__(self, session):
         Screen.__init__(self, session)
@@ -795,32 +796,32 @@ class CiefpYouTubeMainMenu(Screen):
             if source_type == "saved_playlist":
                 if os.path.exists(PLAYLISTS_DIR):
                     files = [f for f in os.listdir(PLAYLISTS_DIR) if f.endswith('.json')]
-
                     if files:
+                        # Učitaj mapiranje za kanale
+                        url_mapping = self.load_channel_name_mapping()
+
                         saved_lists = []
                         for filename in files:
                             try:
                                 with open(os.path.join(PLAYLISTS_DIR, filename), 'r') as f:
                                     data = json.load(f)
-                                    # Sakupljamo (Lepo ime kanala, putanja do fajla)
-                                    saved_lists.append(
-                                        (data.get("playlist_name", filename), os.path.join(PLAYLISTS_DIR, filename)))
+                                    raw_name = data.get("playlist_name", filename.replace('.json', ''))
+                                    # Dobij lijepi naziv
+                                    pretty_name = self.get_pretty_playlist_name(raw_name, url_mapping)
+                                    saved_lists.append((pretty_name, os.path.join(PLAYLISTS_DIR, filename)))
                             except:
                                 pass
-
                         if saved_lists:
-                            # Ako ima samo JEDNA sačuvana lista, pusti je odmah bez ChoiceBox-a
+                            # Sortiraj po nazivu
+                            saved_lists.sort(key=lambda x: x[0].lower())
+
                             if len(saved_lists) == 1:
                                 self.openSavedPlaylistCallback((saved_lists[0][0], saved_lists[0][1]))
                                 return
-
-                            # Ako ih ima više, ponudi ChoiceBox korisniku
                             self.session.openWithCallback(self.openSavedPlaylistCallback, ChoiceBox,
                                                           title="Select a saved playlist:", list=saved_lists)
                             return
-
-                self.session.open(MessageBox,
-                                  "No saved playlists!\nOpen a channel to automatically create a playlist.",
+                self.session.open(MessageBox, "No saved playlists!\nOpen a channel to automatically create a playlist.",
                                   MessageBox.TYPE_ERROR)
                 return
             # -----------------------------------------------------------------
@@ -1044,6 +1045,7 @@ class CiefpYouTubeMainMenu(Screen):
         self.list = new_list
 
     def openSavedPlaylistCallback(self, answer):
+        """Callback nakon odabira playliste iz ChoiceBox-a"""
         if answer:
             filepath = answer[1]
             try:
@@ -1051,27 +1053,22 @@ class CiefpYouTubeMainMenu(Screen):
                     data = json.load(f)
                     playlist = data.get("videos", [])
                     playlist_name = data.get("playlist_name", "")
-                    bouquet_version = data.get("bouquet_version", "")  # DODAJ OVO
+                    bouquet_version = data.get("bouquet_version", "")
 
                 if playlist:
-                    # Provjeri da li je WebCam playlist
-                    if playlist_name == "WebCam Prenj":
-                        # Za WebCam playlistu pitaj korisnika šta želi
-                        choices = [
-                            ("Play single camera (no auto-switch)", "single"),
-                            ("Play all cameras with auto-switch", "playlist")
-                        ]
-                        self.session.openWithCallback(
-                            lambda choice: self.webcam_playlist_choice(choice, playlist, bouquet_version),
-                            ChoiceBox,
-                            title="WebCam Prenj - Select mode:",
-                            list=choices
-                        )
-                    else:
-                        # Za obične playliste normalno otvori
-                        self.session.open(CiefpShortsPlayer, playlist)
+                    # UKLONI specijalni tretman za WebCam - sve ide u CiefpShortsPlayer
+                    # WebCam playlisti proslijedi bouquet_version ako postoji
+                    if playlist_name == "WebCam Prenj" and bouquet_version:
+                        # Sačuvaj verziju u playlisti da je CiefpShortsPlayer može koristiti
+                        for video in playlist:
+                            video['bouquet_version'] = bouquet_version
+
+                    # SVI JSON fajlovi (i WebCam i ostali) idu u CiefpShortsPlayer
+                    self.session.open(CiefpShortsPlayer, playlist)
+
             except Exception as e:
-                print(f"[CiefpYouTube] Error opening selected list:{e}")
+                print(f"[CiefpYouTube] Error opening selected list: {e}")
+                self.session.open(MessageBox, f"Error opening playlist: {str(e)}", MessageBox.TYPE_ERROR)
 
     def webcam_playlist_choice(self, choice, playlist, bouquet_version=""):
         """Callback za izbor načina reprodukcije WebCam liste"""
@@ -1100,41 +1097,122 @@ class CiefpYouTubeMainMenu(Screen):
         # Otvori sa webcam_mode=False da nema auto-switch
         self.session.open(CiefpShortsPlayer, single_video, webcam_mode=False)
 
+    def load_channel_name_mapping(self):
+        """Učitava mapiranje URL -> naziv iz user_channels.json"""
+        mapping = {}
+
+        # Učitaj user_channels
+        if os.path.exists(USER_CHANNELS_FILE):
+            try:
+                with open(USER_CHANNELS_FILE, 'r') as f:
+                    data = json.load(f)
+                    for channel in data.get('channels', []):
+                        url = channel.get('url', '')
+                        name = channel.get('name', '')
+                        if url and name:
+                            mapping[url] = name
+                            # Dodaj i verziju bez /videos na kraju
+                            if url.endswith('/videos'):
+                                mapping[url[:-8]] = name
+                            # Dodaj i verziju sa /videos na kraju ako je URL bez njega
+                            if not url.endswith('/videos'):
+                                mapping[url + '/videos'] = name
+            except:
+                pass
+
+        return mapping
+
+    def get_pretty_playlist_name(self, playlist_name, url_mapping):
+        """Konvertuje playlist name u lijepi prikaz"""
+        # Ako je WebCam Prenj, ostavi ga
+        if playlist_name == "WebCam Prenj":
+            return "WebCam Prenj"
+
+        # Ako je YouTube Music (specijalna kategorija)
+        if playlist_name == "YouTube Music":
+            return "YouTube Music"
+
+        # Provjeri da li je URL u mapping-u
+        if playlist_name in url_mapping:
+            return url_mapping[playlist_name]
+
+        # Provjeri da li je URL bez /videos na kraju
+        if playlist_name.endswith('/videos'):
+            base_url = playlist_name[:-8]
+            if base_url in url_mapping:
+                return url_mapping[base_url]
+
+        # Ako je običan search term (nije URL), vrati ga kako jeste
+        if not playlist_name.startswith('http'):
+            return playlist_name
+
+        # Ako je URL ali nije mapiran, pokušaj izvući ime iz URL-a
+        if '@' in playlist_name:
+            parts = playlist_name.split('@')
+            if len(parts) > 1:
+                handle = parts[1].split('/')[0]
+                return f"@{handle}"
+
+        return playlist_name
+
+    def get_safe_filename(self, name):
+        """Konvertuje naziv u siguran filename"""
+        # Zamijeni sve što nije slovo, broj, space, underscore ili crticu
+        safe = "".join([c for c in name if c.isalnum() or c in (' ', '_', '-')]).strip()
+        safe = safe.replace(' ', '_')
+        # Ukloni višestruke underscore
+        while '__' in safe:
+            safe = safe.replace('__', '_')
+        # Ukloni underscore na početku i kraju
+        safe = safe.strip('_')
+        return safe + ".json"
+
     def loadVideos(self, source_type, search_term):
         playlist = self.extractor.get_shorts_list(source_type, search_term)
 
-        # --- Čuvanje više različitih plejlista na osnovu naziva ---
         if playlist and search_term:
             try:
                 if not os.path.exists(PLAYLISTS_DIR):
                     os.makedirs(PLAYLISTS_DIR)
 
-                # Čišćenje naziva od emojija, krtih znakova i URL linkova
-                clean_term = "".join([c for c in search_term if c.isalnum() or c in (' ', '_', '-')]).strip()
+                # Učitaj mapiranje za kanale
+                url_mapping = self.load_channel_name_mapping()
 
-                # Ako je u pitanju URL (korisnički kanal), skraćujemo ga na ime handle-a (@)
-                if "youtube.com" in search_term or "http" in search_term:
-                    clean_term = search_term.split('@')[-1].split('/')[0] if '@' in search_term else "User_Channel"
+                # Dobij lijepi naziv za prikaz
+                pretty_name = search_term
+                if search_term in url_mapping:
+                    pretty_name = url_mapping[search_term]
+                elif search_term.endswith('/videos'):
+                    base_url = search_term[:-8]
+                    if base_url in url_mapping:
+                        pretty_name = url_mapping[base_url]
 
-                if not clean_term:
-                    clean_term = str(source_type)
+                # Napravi siguran filename iz lijepog naziva
+                safe_filename = self.get_safe_filename(pretty_name)
 
-                safe_filename = clean_term.replace(" ", "_") + ".json"
+                # Ako filename već postoji, dodaj broj
+                original_safe = safe_filename
+                counter = 1
+                while os.path.exists(os.path.join(PLAYLISTS_DIR, safe_filename)):
+                    name_part = original_safe.replace('.json', '')
+                    safe_filename = f"{name_part}_{counter}.json"
+                    counter += 1
+
                 filepath = os.path.join(PLAYLISTS_DIR, safe_filename)
 
                 playlist_data = {
-                    "playlist_name": search_term,  # Čuvamo originalno ime za ChoiceBox
+                    "playlist_name": pretty_name,  # Čuvamo lijepi naziv
+                    "original_term": search_term,  # Sačuvamo i original za svaki slučaj
                     "videos": playlist
                 }
 
                 with open(filepath, 'w') as f:
-                    json.dump(playlist_data, f)
-                print(f"[CiefpYouTube] Playlist for '{search_term}' successfully saved to {safe_filename}.")
-            except Exception as e:
-                print(f"[CiefpYouTube] Error while dynamically saving list: {e}")
-        # ----------------------------------------------------------------
+                    json.dump(playlist_data, f, indent=2)
+                print(f"[CiefpYouTube] Playlist '{pretty_name}' saved as {safe_filename}")
 
-        # POZIV TVOJE ORIGINALNE FUNKCIJE PREKO REACTOR-A
+            except Exception as e:
+                print(f"[CiefpYouTube] Error saving playlist: {e}")
+
         from twisted.internet import reactor
         reactor.callFromThread(self.videosLoaded, playlist)
 

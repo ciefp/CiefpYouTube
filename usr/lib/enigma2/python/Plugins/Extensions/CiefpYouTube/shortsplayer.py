@@ -98,6 +98,7 @@ class CiefpShortsPlayer(Screen):
         </screen>
     """
 
+    # U CiefpShortsPlayer klasi, izmijeni __init__ metod:
     def __init__(self, session, playlist, webcam_mode=False, bouquet_version=""):
         Screen.__init__(self, session)
         self.session = session
@@ -105,6 +106,15 @@ class CiefpShortsPlayer(Screen):
         self.index = 0
         self.webcam_mode = webcam_mode
         self.bouquet_version = bouquet_version
+
+        # Provjeri da li neki video u playlisti ima bouquet_version
+        if not self.webcam_mode and not self.bouquet_version:
+            for video in playlist:
+                if 'bouquet_version' in video:
+                    self.bouquet_version = video.get('bouquet_version', '')
+                    if self.bouquet_version:
+                        self.webcam_mode = True
+                        break
 
         self["status"] = Label("")
         self["controls"] = Label("▲/▼ Select | OK Options | EXIT Back")
@@ -127,16 +137,38 @@ class CiefpShortsPlayer(Screen):
 
     def okClicked(self):
         self.index = self["menu"].getSelectedIndex()
-        
+
+        # ZA WEBCAM: Prikaži ChoiceBox sa opcijama single/playlist
         if self.webcam_mode:
-            self.session.open(CiefpWebcamPlaylistPlayer, self.playlist, self.index, self.bouquet_version)
+            choices = [
+                ("Play this video only", "single"),
+                ("Play entire playlist in sequence (Mini Skin)", "playlist")
+            ]
+            self.session.openWithCallback(self.webcam_choice_callback, ChoiceBox,
+                                          title="Select playback mode:", list=choices)
             return
-        
+
+        # ZA OBIČNE PLAYLISTE: Originalni kod
         choices = [
             ("Play this video only", "single"),
             ("Play entire playlist in sequence (Mini Skin)", "playlist")
         ]
-        self.session.openWithCallback(self.choiceCallback, ChoiceBox, title="Select playback mode:", list=choices)
+        self.session.openWithCallback(self.choiceCallback, ChoiceBox,
+                                      title="Select playback mode:", list=choices)
+
+    def webcam_choice_callback(self, answer):
+        """Callback za webcam izbor (isti kao choiceCallback ali sa webcam_mode)"""
+        if answer:
+            mode = answer[1]
+            if mode == "single":
+                current_video = self.playlist[self.index]
+                url = current_video.get('url')
+                title = current_video.get('title', 'Video')
+                self["status"].setText("Loading stream...")
+                threading.Thread(target=self.extractAndPlaySingle, args=(url, title), daemon=True).start()
+            elif mode == "playlist":
+                # Za webcam playlistu, pošalji webcam_mode=True
+                self.session.open(CiefpWebcamPlaylistPlayer, self.playlist, self.index, self.bouquet_version)
 
     def choiceCallback(self, answer):
         if answer:
@@ -416,6 +448,8 @@ class CiefpWebcamPlaylistPlayer(Screen):
         self["playlist_info"] = Label("")
         self["controls"] = Label(f"🔴 WEBCAM | Auto-switch: {self.webcam_timeout}s | OK: Pause | ▲/▼: Skip | EXIT: Exit")
         self["time"] = Label("")
+        version_text = bouquet_version[:100] if len(bouquet_version) > 100 else bouquet_version
+        self["bouquet_version"] = Label(version_text)
         self["bouquet_version"] = Label(bouquet_version[:100] if len(bouquet_version) > 100 else bouquet_version)
 
         self["actions"] = ActionMap(["SetupActions", "DirectionActions"], {
