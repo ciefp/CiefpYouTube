@@ -41,6 +41,7 @@ Transfer the file to your receiver's /tmp directory using an FTP client (FileZil
 Connect via SSH/Telnet and execute:
 
 Bash
+
 # For standard IPK images (OpenATV, OpenPLi, etc.)
 opkg update && opkg install /tmp/*.ipk
 
@@ -60,8 +61,9 @@ Set folder permissions to 755.
 
 Restart the Enigma2 GUI.
 
-🔑 YouTube API Configuration (Optional but Recommended)
-To avoid standard API quota limitations and personal limitations, you can configure your own YouTube API Key:
+## 🔑 YouTube API Configuration (Optional but Recommended)
+To avoid standard API quota limitations and personal limitations, 
+you can configure your own YouTube API Key:
 
 Go to the Google Developers Console.
 
@@ -69,12 +71,13 @@ Create a new project and enable the YouTube Data API v3.
 
 Generate an API Key.
 
-Open the plugin configuration menu on your TV screen, or manually paste your key into the configuration file located at:
+Open the plugin configuration menu on your TV screen, 
+or manually paste your key into the configuration file located at:
 /etc/enigma2/ciefpyoutube/api_key.txt
 
 Save the file and restart the plugin.
 
-🎮 Remote Control Layout
+## 🎮 Remote Control Layout
 ⬅️/➡️ / ⬆️/⬇️: Navigate through video feeds, menus, and search results.
 
 OK: Play selected video / Confirm selection.
@@ -89,7 +92,7 @@ OK: Play selected video / Confirm selection.
 
 🔢 Number Keys: Quick skip inside the video player (e.g., 1/3/7 for back, 4/6/9 for forward).
 
-❓ Troubleshooting & Dependencies
+## ❓ Troubleshooting & Dependencies
 If the plugin crashes or fails to play videos, ensure you have the necessary dependencies installed via SSH:
 
 Bash
@@ -102,11 +105,13 @@ opkg install python3-requests python3-urllib3
 
 # Recommended for optimal playback (ServiceApp)
 opkg install enigma2-plugin-systemplugins-serviceapp exteplayer3 ffmpeg
-Green Screen (GSOD) on startup? Check if your image is running Python 3. If you encounter an experimental image bug, please open a GitHub Issue and attach the crashlog found in /home/root/logs/ or /tmp/.
+Green Screen (GSOD) on startup? Check if your image is running Python 3. 
+If you encounter an experimental image bug, please open a GitHub Issue and attach the crashlog found in /home/root/logs/ or /tmp/.
 
-Video loading forever? Try changing the player engine in Menu > Setup > System > ServiceApp to exteplayer3 or lower the default video resolution in the plugin settings.
+Video loading forever? Try changing the player engine in Menu > Setup > System > ServiceApp to exteplayer3
+ or lower the default video resolution in the plugin settings.
 
-🤝 Contributing & Support
+## 🤝 Contributing & Support
 Bug Reports & Feature Requests: Please use the GitHub Issues section.
 
 Translations: If you would like to translate the plugin into your native language, feel free to submit a Pull Request with updated .po files.
