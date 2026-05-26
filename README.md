@@ -95,7 +95,7 @@ OK: Play selected video / Confirm selection.
 ## ❓ Troubleshooting & Dependencies
 If the plugin crashes or fails to play videos, ensure you have the necessary dependencies installed via SSH:
 
-Bash
+
 # Update package feed
 opkg update
 
@@ -118,5 +118,5 @@ Translations: If you would like to translate the plugin into your native languag
 
 Community: Follow and connect with the author on X (Twitter): @ciefp.
 
-Disclaimer: This plugin is not officially affiliated with, authorized, maintained, or endorsed by YouTube or Google LLC. 
+## Disclaimer: This plugin is not officially affiliated with, authorized, maintained, or endorsed by YouTube or Google LLC. 
 It is an open-source educational project built purely for the Enigma2 community.
