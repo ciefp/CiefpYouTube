@@ -24,21 +24,12 @@ Unlike heavy alternatives, this plugin focuses on speed, ease of use, and deep i
 
 ## 🛠️ Installation
 
-Choose **one** of the following methods to install the plugin on your Enigma2 set-top box.
-
-### Method 1: The Quick Terminal Command (Recommended)
+### Method The Quick Terminal Command (Recommended)
 Connect to your receiver via SSH/Telnet (using PuTTY or Terminal) and run the following command:
-
 ```bash
-wget -O - [https://raw.githubusercontent.com/ciefp/CiefpYouTube/main/installer.sh](https://raw.githubusercontent.com/ciefp/CiefpYouTube/main/installer.sh) | bash
+[wget -q "--no-check-certificate" https://raw.githubusercontent.com/ciefp/CiefpYouTube/main/installer.sh -O - | /bin/sh]
 (Note: If an installer.sh script is provided in your repository, this is the cleanest way. Make sure to update the URL accordingly).
 
-Method 2: Manual FTP Installation (.ipk / .deb)
-Download the latest release .ipk (for OpenATV/OpenPLi) or .deb (for DreamOS) from the Releases section.
-
-Transfer the file to your receiver's /tmp directory using an FTP client (FileZilla, WinSCP).
-
-Connect via SSH/Telnet and execute:
 
 ```
 
