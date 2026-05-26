@@ -4,6 +4,14 @@
 [![Platform](https://img.shields.io/badge/platform-Enigma2-orange.svg)](https://github.com/ciefp/CiefpYouTube)
 [![License](https://img.shields.io/badge/license-GPL--2.0-green.svg)](LICENSE)
 
+
+### Preview
+
+![Main Menu](https://raw.githubusercontent.com/ciefp/CiefpYouTube/main/slika1.jpg)
+![Playlist](https://raw.githubusercontent.com/ciefp/CiefpYouTube/main/slika2.jpg)
+![WebCam](https://raw.githubusercontent.com/ciefp/CiefpYouTube/main/slika4.jpg)
+
+
 **CiefpYouTube** is a powerful, lightweight, and user-friendly Enigma2 plugin designed for satellite receiver users (such as Vu+, Dreambox, Zgemma, etc.) running modern images like OpenATV, OpenPLi, Pure2, and OpenViX. It allows you to seamlessly browse, search, and stream YouTube videos directly on your TV screen using only your remote control.
 
 Unlike heavy alternatives, this plugin focuses on speed, ease of use, and deep integration with standard Enigma2 media players.
