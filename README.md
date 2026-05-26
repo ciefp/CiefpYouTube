@@ -40,7 +40,7 @@ Transfer the file to your receiver's /tmp directory using an FTP client (FileZil
 
 Connect via SSH/Telnet and execute:
 
-```Bash
+```
 
 # For standard IPK images (OpenATV, OpenPLi, etc.)
 opkg update && opkg install /tmp/*.ipk
