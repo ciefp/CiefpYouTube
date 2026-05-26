@@ -75,7 +75,7 @@ opkg update
 # Install required python components
 opkg install python3-requests python3-urllib3
 
-# Recommended for optimal playback (ServiceApp)
+Recommended for optimal playback (ServiceApp)
 opkg install enigma2-plugin-systemplugins-serviceapp exteplayer3 ffmpeg
 Green Screen (GSOD) on startup? Check if your image is running Python 3. 
 If you encounter an experimental image bug, please open a GitHub Issue and attach the crashlog found in /home/root/logs/ or /tmp/.
@@ -88,7 +88,8 @@ Bug Reports & Feature Requests: Please use the GitHub Issues section.
 
 Translations: If you would like to translate the plugin into your native language, feel free to submit a Pull Request with updated .po files.
 
-Community: Follow and connect with the author on X (Twitter): @ciefp.
+## Community: 
+Follow and connect with the author on X (Twitter): @ciefp.
 
 ## Disclaimer: 
 This plugin is not officially affiliated with, authorized, maintained, or endorsed by YouTube or Google LLC. 
