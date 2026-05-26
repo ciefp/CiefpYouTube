@@ -42,24 +42,6 @@ Connect via SSH/Telnet and execute:
 
 ```
 
-# For standard IPK images (OpenATV, OpenPLi, etc.)
-opkg update && opkg install /tmp/*.ipk
-
-# For DreamOS DEB images (Dreambox)
-dpkg -i /tmp/*.deb && apt-get -f install
-Restart the Enigma2 GUI.
-
-Method 3: Manual Source Installation
-If you want to install directly from the source repository:
-
-Download or clone this repository.
-
-Copy the folder CiefpYouTube to your receiver's directory:
-/usr/lib/enigma2/python/Plugins/Extensions/
-
-Set folder permissions to 755.
-
-Restart the Enigma2 GUI.
 
 ## 🔑 YouTube API Configuration (Optional but Recommended)
 To avoid standard API quota limitations and personal limitations, 
@@ -101,7 +83,6 @@ opkg update
 
 # Install required python components
 opkg install python3-requests python3-urllib3
-# For older Python 2 images: opkg install python-requests
 
 # Recommended for optimal playback (ServiceApp)
 opkg install enigma2-plugin-systemplugins-serviceapp exteplayer3 ffmpeg
@@ -118,5 +99,6 @@ Translations: If you would like to translate the plugin into your native languag
 
 Community: Follow and connect with the author on X (Twitter): @ciefp.
 
-## Disclaimer: This plugin is not officially affiliated with, authorized, maintained, or endorsed by YouTube or Google LLC. 
+## Disclaimer: 
+This plugin is not officially affiliated with, authorized, maintained, or endorsed by YouTube or Google LLC. 
 It is an open-source educational project built purely for the Enigma2 community.
