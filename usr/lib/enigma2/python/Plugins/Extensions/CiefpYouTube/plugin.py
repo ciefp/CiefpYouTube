@@ -17,11 +17,13 @@ import glob
 import os
 import json
 
+import datetime  # DODAJ OVO
+import subprocess  # DODAJ OVO (ako već nema)
 from .extractor import ShortsExtractor
 from .shortsplayer import CiefpShortsPlayer
 
 PLUGIN_NAME = "CiefpYouTube"
-PLUGIN_VERSION = "1.6"
+PLUGIN_VERSION = "1.7"
 USER_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/user_channels.json"
 LIVE_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/live_channels.json"
 PLAYLISTS_DIR = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/playlists/"
@@ -284,24 +286,32 @@ class SettingsScreen(Screen, ConfigListScreen):
 
 
 class LogViewerScreen(Screen):
-    """Screen za pregled log fajla sa skrolovanjem"""
+    """Screen za pregled log fajla sa skrolovanjem - poboljšani skin"""
     skin = """
-        <screen position="center,center" size="1200,700" title="Broken Links Log Viewer" backgroundColor="#660033">
-            <widget name="log_text" position="20,20" size="1160,600" font="Regular;20" foregroundColor="#ffffff" backgroundColor="#1a1a1a" halign="left" valign="top" transparent="0" />
+        <screen position="center,center" size="1600,900" title="Broken Links Log Viewer" backgroundColor="#660033" flags="wfNoBorder">
+            <!-- Naslovna traka -->
+            <eLabel position="0,0" size="1600,80" backgroundColor="#1a1a1a" zPosition="1" />
+            <eLabel text="📋 BROKEN LINKS LOG" position="30,20" size="600,50" font="Regular;32" foregroundColor="#ffcc00" backgroundColor="#00000000" transparent="1" zPosition="2" />
 
-            <!-- Bottom buttons bar -->
-            <eLabel position="20,640" size="1160,50" backgroundColor="#2a2a2a" zPosition="1" />
+            <!-- Glavni prozor za log -->
+            <widget name="log_text" position="20,100" size="1560,700" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#1a1a1a" halign="left" valign="top" transparent="0" />
 
-            <!-- Red button (Exit) -->
-            <eLabel position="40,652" size="30,30" backgroundColor="#ff0000" zPosition="2" />
-            <eLabel text="Exit" position="80,648" size="100,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+            <!-- Donja status traka -->
+            <eLabel position="0,820" size="1600,80" backgroundColor="#1a1a1a" zPosition="1" />
 
-            <!-- Green button (Clear) -->
-            <eLabel position="220,652" size="30,30" backgroundColor="#00ff00" zPosition="2" />
-            <eLabel text="Clear Log" position="260,648" size="120,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+            <!-- Informacija o poziciji -->
+            <widget name="info" position="20,830" size="1000,50" font="Regular;24" foregroundColor="#00ffcc" backgroundColor="#00000000" transparent="1" halign="left" zPosition="2" />
 
-            <!-- Controls info -->
-            <widget name="info" position="450,648" size="700,40" font="Regular;22" halign="right" foregroundColor="#ffcc00" backgroundColor="#00000000" transparent="1" zPosition="2" />
+            <!-- Dugmad -->
+            <eLabel position="1200,835" size="50,50" backgroundColor="#ff0000" zPosition="2" />
+            <eLabel text="EXIT" position="1270,830" size="100,50" font="Regular;28" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+
+            <eLabel position="1400,835" size="50,50" backgroundColor="#00ff00" zPosition="2" />
+            <eLabel text="CLEAR" position="1470,830" size="120,50" font="Regular;28" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+
+            <!-- Scroll indikatori -->
+            <eLabel text="▲" position="1550,110" size="40,40" font="Regular;30" foregroundColor="#ffcc00" backgroundColor="#00000000" transparent="1" halign="center" zPosition="2" />
+            <eLabel text="▼" position="1550,750" size="40,40" font="Regular;30" foregroundColor="#ffcc00" backgroundColor="#00000000" transparent="1" halign="center" zPosition="2" />
         </screen>
     """
 
@@ -311,19 +321,24 @@ class LogViewerScreen(Screen):
         self.log_file = log_file
 
         self["log_text"] = Label("")
-        self["info"] = Label("▲/▼ Scroll | Green: Clear | Red: Exit")
+        self["info"] = Label("")
 
-        self["actions"] = ActionMap(["SetupActions", "DirectionActions"], {
+        # DODAJ: Eksplicitno mapiranje za ColorActions
+        self["actions"] = ActionMap(["SetupActions", "DirectionActions", "ColorActions"], {
             "cancel": self.close,
             "red": self.close,
-            "green": self.clear_log,
+            "green": self.clear_log,  # Zeleno dugme
+            "yellow": self.clear_log,  # Žuto dugme kao backup
+            "blue": self.clear_log,  # Plavo dugme kao backup
             "up": self.scroll_up,
             "down": self.scroll_down,
+            "left": self.scroll_page_up,
+            "right": self.scroll_page_down,
         }, -1)
 
         self.scroll_position = 0
         self.lines = []
-        self.max_lines_on_screen = 30  # Približan broj linija na ekranu
+        self.max_lines_on_screen = 28
 
         self.load_log_content()
 
@@ -339,13 +354,16 @@ class LogViewerScreen(Screen):
                 self.update_display()
             else:
                 self["log_text"].setText("Log file does not exist.\n\nNo broken links recorded yet.")
+                self["info"].setText("No log file found")
         except Exception as e:
             self["log_text"].setText(f"Error reading log file:\n{str(e)}")
+            self["info"].setText("Error loading log")
 
     def update_display(self):
         """Ažurira prikaz trenutne pozicije"""
         if not self.lines:
             self["log_text"].setText("Log file is empty.")
+            self["info"].setText("Log is empty | Red: Exit | Green: Clear")
             return
 
         start = self.scroll_position
@@ -359,25 +377,38 @@ class LogViewerScreen(Screen):
         total_lines = len(self.lines)
         if total_lines > 0:
             percent = int((self.scroll_position / total_lines) * 100)
-            info = f"Line {start + 1}-{end} of {total_lines} ({percent}%) | ▲/▼ scroll"
-            self["info"].setText(info)
+            self["info"].setText(
+                f"📄 Lines: {start + 1}-{end} of {total_lines} ({percent}%) | ▲/▼ scroll | ◀/▶ page | 🟢 Clear | 🔴 Exit")
 
         # Ako je tekst predugačak, skrati (Label ima ograničenje)
-        if len(display_text) > 5000:
-            display_text = display_text[-5000:] + "\n\n... (truncated)"
+        if len(display_text) > 10000:
+            display_text = display_text[-10000:] + "\n\n... (truncated)"
 
         self["log_text"].setText(display_text)
 
     def scroll_up(self):
-        """Scroll up"""
+        """Scroll up one line"""
         if self.scroll_position > 0:
             self.scroll_position -= 1
             self.update_display()
 
     def scroll_down(self):
-        """Scroll down"""
+        """Scroll down one line"""
         if self.scroll_position + self.max_lines_on_screen < len(self.lines):
             self.scroll_position += 1
+            self.update_display()
+
+    def scroll_page_up(self):
+        """Scroll up one page"""
+        if self.scroll_position > 0:
+            self.scroll_position = max(0, self.scroll_position - self.max_lines_on_screen)
+            self.update_display()
+
+    def scroll_page_down(self):
+        """Scroll down one page"""
+        if self.scroll_position + self.max_lines_on_screen < len(self.lines):
+            self.scroll_position = min(len(self.lines) - self.max_lines_on_screen,
+                                       self.scroll_position + self.max_lines_on_screen)
             self.update_display()
 
     def clear_log(self):
@@ -391,12 +422,12 @@ class LogViewerScreen(Screen):
                     self.lines = []
                     self.scroll_position = 0
                     self.update_display()
-                    self.session.open(MessageBox, "Log file cleared!", MessageBox.TYPE_INFO)
+                    self.session.open(MessageBox, "✅ Log file cleared!", MessageBox.TYPE_INFO)
                 except Exception as e:
-                    self.session.open(MessageBox, f"Error clearing log: {str(e)}", MessageBox.TYPE_ERROR)
+                    self.session.open(MessageBox, f"❌ Error clearing log: {str(e)}", MessageBox.TYPE_ERROR)
 
         self.session.openWithCallback(confirm_clear, MessageBox,
-                                      "Are you sure you want to clear the log file?",
+                                      "🗑️ Are you sure you want to clear the log file?\n\nThis action cannot be undone!",
                                       MessageBox.TYPE_YESNO)
 
 class CiefpYouTubeMainMenu(Screen):
