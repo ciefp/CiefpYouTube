@@ -21,7 +21,7 @@ from .extractor import ShortsExtractor
 from .shortsplayer import CiefpShortsPlayer
 
 PLUGIN_NAME = "CiefpYouTube"
-PLUGIN_VERSION = "1.5"
+PLUGIN_VERSION = "1.6"
 USER_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/user_channels.json"
 LIVE_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/live_channels.json"
 PLAYLISTS_DIR = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/playlists/"
@@ -281,6 +281,123 @@ class SettingsScreen(Screen, ConfigListScreen):
         if self.callback:
             self.callback(False)
         self.close()
+
+
+class LogViewerScreen(Screen):
+    """Screen za pregled log fajla sa skrolovanjem"""
+    skin = """
+        <screen position="center,center" size="1200,700" title="Broken Links Log Viewer" backgroundColor="#660033">
+            <widget name="log_text" position="20,20" size="1160,600" font="Regular;20" foregroundColor="#ffffff" backgroundColor="#1a1a1a" halign="left" valign="top" transparent="0" />
+
+            <!-- Bottom buttons bar -->
+            <eLabel position="20,640" size="1160,50" backgroundColor="#2a2a2a" zPosition="1" />
+
+            <!-- Red button (Exit) -->
+            <eLabel position="40,652" size="30,30" backgroundColor="#ff0000" zPosition="2" />
+            <eLabel text="Exit" position="80,648" size="100,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+
+            <!-- Green button (Clear) -->
+            <eLabel position="220,652" size="30,30" backgroundColor="#00ff00" zPosition="2" />
+            <eLabel text="Clear Log" position="260,648" size="120,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+
+            <!-- Controls info -->
+            <widget name="info" position="450,648" size="700,40" font="Regular;22" halign="right" foregroundColor="#ffcc00" backgroundColor="#00000000" transparent="1" zPosition="2" />
+        </screen>
+    """
+
+    def __init__(self, session, log_file):
+        Screen.__init__(self, session)
+        self.session = session
+        self.log_file = log_file
+
+        self["log_text"] = Label("")
+        self["info"] = Label("▲/▼ Scroll | Green: Clear | Red: Exit")
+
+        self["actions"] = ActionMap(["SetupActions", "DirectionActions"], {
+            "cancel": self.close,
+            "red": self.close,
+            "green": self.clear_log,
+            "up": self.scroll_up,
+            "down": self.scroll_down,
+        }, -1)
+
+        self.scroll_position = 0
+        self.lines = []
+        self.max_lines_on_screen = 30  # Približan broj linija na ekranu
+
+        self.load_log_content()
+
+    def load_log_content(self):
+        """Učitava log fajl i prikazuje ga"""
+        try:
+            if os.path.exists(self.log_file):
+                with open(self.log_file, 'r') as f:
+                    content = f.read()
+                self.lines = content.split('\n')
+
+                # Prikaži prvi dio
+                self.update_display()
+            else:
+                self["log_text"].setText("Log file does not exist.\n\nNo broken links recorded yet.")
+        except Exception as e:
+            self["log_text"].setText(f"Error reading log file:\n{str(e)}")
+
+    def update_display(self):
+        """Ažurira prikaz trenutne pozicije"""
+        if not self.lines:
+            self["log_text"].setText("Log file is empty.")
+            return
+
+        start = self.scroll_position
+        end = min(start + self.max_lines_on_screen, len(self.lines))
+
+        # Prikaži vidljive linije
+        visible_lines = self.lines[start:end]
+        display_text = "\n".join(visible_lines)
+
+        # Dodaj info o poziciji
+        total_lines = len(self.lines)
+        if total_lines > 0:
+            percent = int((self.scroll_position / total_lines) * 100)
+            info = f"Line {start + 1}-{end} of {total_lines} ({percent}%) | ▲/▼ scroll"
+            self["info"].setText(info)
+
+        # Ako je tekst predugačak, skrati (Label ima ograničenje)
+        if len(display_text) > 5000:
+            display_text = display_text[-5000:] + "\n\n... (truncated)"
+
+        self["log_text"].setText(display_text)
+
+    def scroll_up(self):
+        """Scroll up"""
+        if self.scroll_position > 0:
+            self.scroll_position -= 1
+            self.update_display()
+
+    def scroll_down(self):
+        """Scroll down"""
+        if self.scroll_position + self.max_lines_on_screen < len(self.lines):
+            self.scroll_position += 1
+            self.update_display()
+
+    def clear_log(self):
+        """Briše log fajl"""
+
+        def confirm_clear(answer):
+            if answer:
+                try:
+                    with open(self.log_file, 'w') as f:
+                        f.write("")
+                    self.lines = []
+                    self.scroll_position = 0
+                    self.update_display()
+                    self.session.open(MessageBox, "Log file cleared!", MessageBox.TYPE_INFO)
+                except Exception as e:
+                    self.session.open(MessageBox, f"Error clearing log: {str(e)}", MessageBox.TYPE_ERROR)
+
+        self.session.openWithCallback(confirm_clear, MessageBox,
+                                      "Are you sure you want to clear the log file?",
+                                      MessageBox.TYPE_YESNO)
 
 class CiefpYouTubeMainMenu(Screen):
     skin = """
@@ -605,7 +722,7 @@ class CiefpYouTubeMainMenu(Screen):
             print(f"[CiefpYouTube] Error saving playlist: {e}")
 
     def show_broken_links_log(self):
-        """Prikazuje log neaktivnih linkova"""
+        """Prikazuje log neaktivnih linkova sa skrolovanjem"""
         log_file = "/tmp/ciefp_youtube_broken_links.log"
 
         if not os.path.exists(log_file):
@@ -621,18 +738,8 @@ class CiefpYouTubeMainMenu(Screen):
                 self.session.open(MessageBox, "Log file is empty - no broken links recorded yet.", MessageBox.TYPE_INFO)
                 return
 
-            # Prikaži poslednjih 50 linija (da ne bude preveliko)
-            lines = content.split('\n')
-            last_lines = lines[-50:] if len(lines) > 50 else lines
-            preview = '\n'.join(last_lines)
-
-            # Opcije za log
-            choices = [
-                ("📋 View log", "view"),
-                ("🗑️ Clear log", "clear"),
-                ("📂 Full log path", "path")
-            ]
-            self.session.openWithCallback(self.broken_log_callback, ChoiceBox, title="Broken Links Log", list=choices)
+            # Otvori novi screen za pregled loga
+            self.session.open(LogViewerScreen, log_file)
 
         except Exception as e:
             self.session.open(MessageBox, f"Error reading log: {str(e)}", MessageBox.TYPE_ERROR)

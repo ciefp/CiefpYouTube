@@ -79,10 +79,13 @@ def log_broken_link(url, title, error_msg=""):
     try:
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open(BROKEN_LINKS_LOG, 'a') as f:
-            f.write(f"[{timestamp}] TITLE: {title}\n")
-            f.write(f"  URL: {url}\n")
-            f.write(f"  ERROR: {error_msg}\n")
-            f.write("-" * 80 + "\n")
+            f.write(f"\n{'='*70}\n")
+            f.write(f"[{timestamp}]\n")
+            f.write(f"📹 TITLE: {title}\n")
+            f.write(f"🔗 URL: {url}\n")
+            if error_msg:
+                f.write(f"❌ ERROR: {error_msg}\n")
+            f.write(f"{'='*70}\n")
     except:
         pass
 
