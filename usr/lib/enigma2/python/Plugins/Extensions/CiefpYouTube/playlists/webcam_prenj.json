@@ -1,7 +1,12 @@
 {
   "playlist_name": "WebCam Prenj",
-  "bouquet_version": "Prenj SF Ver.882  25.05.26   2.829 cam   @=is moving  @@=multiple link",
+  "bouquet_version": "Prenj SF Ver.888  07.06.26   2.909 cam   @=is moving  @@=multiple link",
   "videos": [
+    {
+      "title": "\ud83c\udfa5 Brela",
+      "url": "https://www.youtube.com/watch?v=koP0tjIk51o",
+      "author": "WebCam"
+    },
     {
       "title": "\ud83c\udfa5 Hvar",
       "url": "https://www.youtube.com/watch?v=0wHWHAFnNh0",
@@ -9,7 +14,7 @@
     },
     {
       "title": "\ud83c\udfa5 Jahorina TV @",
-      "url": "https://www.youtube.com/watch?v=qzv44RlfbZg",
+      "url": "https://www.youtube.com/watch?v=JPahVtdQLu8",
       "author": "WebCam"
     },
     {
@@ -44,7 +49,7 @@
     },
     {
       "title": "\ud83c\udfa5 Primo\u0161ten",
-      "url": "https://www.youtube.com/watch?v=idr71oXmhdc",
+      "url": "https://www.youtube.com/watch?v=upOiG0CMlnw",
       "author": "WebCam"
     },
     {
@@ -184,7 +189,7 @@
     },
     {
       "title": "\ud83c\udfa5 Iceland @",
-      "url": "https://www.youtube.com/watch?v=DrI0v0Qqqdg",
+      "url": "https://www.youtube.com/watch?v=gm2YafWT-pk",
       "author": "WebCam"
     },
     {
@@ -303,6 +308,26 @@
       "author": "WebCam"
     },
     {
+      "title": "\ud83c\udfa5 Portugal Lisbon @",
+      "url": "https://www.youtube.com/watch?v=VbDwJxGlZ5k",
+      "author": "WebCam"
+    },
+    {
+      "title": "\ud83c\udfa5 Portugal Madeira Island @",
+      "url": "https://www.youtube.com/watch?v=f6D3Zq6J5A8",
+      "author": "WebCam"
+    },
+    {
+      "title": "\ud83c\udfa5 Portugal Madeira Island 2",
+      "url": "https://www.youtube.com/watch?v=LSR8zU4uVv0",
+      "author": "WebCam"
+    },
+    {
+      "title": "\ud83c\udfa5 Portugal Porto",
+      "url": "https://www.youtube.com/watch?v=45wxTsNFPXw",
+      "author": "WebCam"
+    },
+    {
       "title": "\ud83c\udfa5 Russia @",
       "url": "https://www.youtube.com/watch?v=tHf8xbUNlTU",
       "author": "WebCam"
@@ -319,12 +344,22 @@
     },
     {
       "title": "\ud83c\udfa5 Scotland Fort William",
-      "url": "https://www.youtube.com/watch?v=fKb7dUCuofs",
+      "url": "https://www.youtube.com/watch?v=2occtpoOu_w",
+      "author": "WebCam"
+    },
+    {
+      "title": "\ud83c\udfa5 Scotland Fort William wide view",
+      "url": "https://www.youtube.com/watch?v=X7_o1eJmOLA",
       "author": "WebCam"
     },
     {
       "title": "\ud83c\udfa5 Slovakia @",
       "url": "https://www.youtube.com/watch?v=6V39eDpTyas",
+      "author": "WebCam"
+    },
+    {
+      "title": "\ud83c\udfa5 South America @",
+      "url": "https://www.youtube.com/watch?v=IRnB5WLfcE0",
       "author": "WebCam"
     },
     {
@@ -348,6 +383,11 @@
       "author": "WebCam"
     },
     {
+      "title": "\ud83c\udfa5 Switzerland \ud83c\udde8\ud83c\udded 4K-Fahrt",
+      "url": "https://www.youtube.com/watch?v=RXKT2POJbfY",
+      "author": "WebCam"
+    },
+    {
       "title": "\ud83c\udfa5 Switzerland Feratel @",
       "url": "https://www.youtube.com/watch?v=enYFXf8u7Lc",
       "author": "WebCam"
@@ -360,6 +400,11 @@
     {
       "title": "\ud83c\udfa5 Switzerland Luzern",
       "url": "https://www.youtube.com/watch?v=QIt1FaDMnQc",
+      "author": "WebCam"
+    },
+    {
+      "title": "\ud83c\udfa5 Switzerland Rheinfall",
+      "url": "https://www.youtube.com/watch?v=UCgLr29bxO8",
       "author": "WebCam"
     },
     {
@@ -390,6 +435,11 @@
     {
       "title": "\ud83c\udfa5 United Kingdom @",
       "url": "https://www.youtube.com/watch?v=K2gBg7jjhIc",
+      "author": "WebCam"
+    },
+    {
+      "title": "\ud83c\udfa5 United Kingdom London Bus Rides \ud83d\udcab DIGEST",
+      "url": "https://www.youtube.com/watch?v=wDaV8EkYHmk",
       "author": "WebCam"
     },
     {
@@ -454,7 +504,7 @@
     },
     {
       "title": "\ud83c\udfa5 World 7 @",
-      "url": "https://www.youtube.com/watch?v=Zl_gKWFrgpA",
+      "url": "https://www.youtube.com/watch?v=_2ulO-6JENw",
       "author": "WebCam"
     },
     {
@@ -470,11 +520,6 @@
     {
       "title": "\ud83c\udfa5 World 10 Cities 2 @",
       "url": "https://www.youtube.com/watch?v=_q0yBz6h4Lg",
-      "author": "WebCam"
-    },
-    {
-      "title": "\ud83c\udfa5 World 11 @",
-      "url": "https://www.youtube.com/watch?v=B7uu63Gejm0",
       "author": "WebCam"
     }
   ]

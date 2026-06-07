@@ -203,6 +203,8 @@ class CiefpShortsPlayer(Screen):
                     from twisted.internet import reactor
                     reactor.callFromThread(self.showErrorMsg, "Cannot extract stream URL")
         except Exception as e:
+            # Loguj neispravan link za single play
+            log_broken_link(url, title, str(e)[:30])
             from twisted.internet import reactor
             reactor.callFromThread(self.showErrorMsg, str(e)[:30])
 
@@ -406,6 +408,15 @@ class CiefpPlaylistPlayer(Screen):
             pass
 
     def showError(self, error_msg):
+        # Loguj neispravan link
+        if hasattr(self, 'playlist') and self.index < len(self.playlist):
+            current_video = self.playlist[self.index]
+            log_broken_link(
+                current_video.get('url', 'unknown'),
+                current_video.get('title', 'unknown'),
+                error_msg
+            )
+
         self["title"].setText(f"Error: {error_msg}. Skipping...")
         self.nextVideo()
 
@@ -476,13 +487,14 @@ class CiefpWebcamPlaylistPlayer(Screen):
         if self.auto_switch_timer:
             self.auto_switch_timer.stop()
 
+        # Provjeri da li smo preko kraja liste
         if self.index >= len(self.playlist):
-            if len(self.playlist) > 0:
-                self.index = 0
-            else:
-                self.handleExit()
-                return
+            # Kraj liste - završavamo
+            self["status"].setText("End of playlist reached")
+            self.handleExit()
+            return
 
+        # ... ostatak koda (isti)
         current_video = self.playlist[self.index]
         url = current_video.get('url')
         title = current_video.get('title', 'Camera')
@@ -588,14 +600,16 @@ class CiefpWebcamPlaylistPlayer(Screen):
             self.countdown_timer.stop()
         self.is_paused = False
 
+        # Provjeri da li smo na zadnjoj kameri
+        if self.index >= len(self.playlist) - 1:
+            # Ovo je zadnja kamera, završavamo reprodukciju
+            self["status"].setText("End of playlist reached")
+            self.handleExit()
+            return
+
         # DODATO: Prije prebacivanja, pripremi se za novu kameru
         self.is_loading = True
-
-        if self.index < len(self.playlist) - 1:
-            self.index += 1
-        else:
-            self.index = 0
-
+        self.index += 1
         self.startExtraction()
 
     def prevVideo(self):
@@ -639,6 +653,15 @@ class CiefpWebcamPlaylistPlayer(Screen):
             pass
 
     def showError(self, error_msg):
+        # Loguj neispravan link
+        if hasattr(self, 'playlist') and self.index < len(self.playlist):
+            current_video = self.playlist[self.index]
+            log_broken_link(
+                current_video.get('url', 'unknown'),
+                current_video.get('title', 'unknown'),
+                error_msg
+            )
+
         self["title"].setText(f"Error: {error_msg}. Skipping...")
         self.is_loading = False
         self.nextVideo()

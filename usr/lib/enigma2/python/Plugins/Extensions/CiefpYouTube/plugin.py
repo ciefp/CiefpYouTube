@@ -21,7 +21,7 @@ from .extractor import ShortsExtractor
 from .shortsplayer import CiefpShortsPlayer
 
 PLUGIN_NAME = "CiefpYouTube"
-PLUGIN_VERSION = "1.4"
+PLUGIN_VERSION = "1.5"
 USER_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/user_channels.json"
 LIVE_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/live_channels.json"
 PLAYLISTS_DIR = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/playlists/"
