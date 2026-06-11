@@ -21,9 +21,10 @@ import datetime  # DODAJ OVO
 import subprocess  # DODAJ OVO (ako već nema)
 from .extractor import ShortsExtractor
 from .shortsplayer import CiefpShortsPlayer
+from .ytdownloader import YouTubeDownloaderScreen
 
 PLUGIN_NAME = "CiefpYouTube"
-PLUGIN_VERSION = "1.7"
+PLUGIN_VERSION = "1.8"
 USER_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/user_channels.json"
 LIVE_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/live_channels.json"
 PLAYLISTS_DIR = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/playlists/"
@@ -511,6 +512,8 @@ class CiefpYouTubeMainMenu(Screen):
 
         # Zatim separator i ostale kategorije
         self.list.append(("─" * 40, "separator"))
+        self.list.append(("📥 Download Manager (from playlists)", "download_manager"))
+        self.list.append(("─" * 40, "separator"))
         self.list.append(("🎬 YouTube Shorts", "yt_shorts"))
         self.list.append(("🎵 YouTube Music", "yt_music"))
         self.list.append(("🎥 YouTube Trailers", "yt_trailers"))
@@ -984,6 +987,9 @@ class CiefpYouTubeMainMenu(Screen):
                 self.load_webcam_playlist(source_type)
             elif source_type == "broken_log":
                 self.show_broken_links_log()
+            elif source_type == "download_manager":
+                from .ytdownloader import YouTubeDownloaderScreen
+                self.session.open(YouTubeDownloaderScreen)
             else:
                 self["status"].setText(f"Loading {current[0]}...")
                 threading.Thread(target=self.loadVideos, args=(source_type, current[0]), daemon=True).start()
@@ -1115,6 +1121,8 @@ class CiefpYouTubeMainMenu(Screen):
             ("🔍 Search YouTube", "search"),
             ("─" * 40, "separator"),
             ("📂 Latest playlist (Quick open)", "saved_playlist"),
+            ("─" * 40, "separator"),
+            ("📥 Download Manager (from playlists)", "download_manager"),  # DODAJTE OVO
             ("🎬 YouTube Shorts", "yt_shorts"),
             ("🎵 YouTube Music", "yt_music"),
             ("🎥 YouTube Trailers", "yt_trailers"),
