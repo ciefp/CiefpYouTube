@@ -83,14 +83,25 @@ def log_download(url, title, filepath, success=True, error_msg=""):
     except:
         pass
 
+
 def get_safe_filename(title):
-    """Konvertuje naslov u siguran naziv fajla"""
-    safe = "".join([c for c in title if c.isalnum() or c in (' ', '-', '_')]).strip()
-    safe = safe.replace(' ', '_')
-    safe = re.sub(r'_+', '_', safe)
-    safe = safe.strip('_')
+    """Konvertuje naslov u siguran naziv fajla - čuva razmake umjesto underscore"""
+    # Prvo ukloni neispravne znakove (dozvoljeni: slova, brojevi, razmak, crtica, tačka)
+    safe = "".join([c for c in title if c.isalnum() or c in (' ', '-', '.', "'")]).strip()
+
+    # Ne zamjenjuj razmake sa underscore - čuvaj ih!
+    # safe = safe.replace(' ', '_')  # ZAKOMENTARISANO ILI OBRISANO
+
+    # Ukloni višestruke razmake
+    safe = re.sub(r'\s+', ' ', safe)
+
+    # Trim
+    safe = safe.strip()
+
+    # Ograniči dužinu
     if len(safe) > 100:
         safe = safe[:100]
+
     return safe
 
 class DownloadSettingsScreen(ConfigListScreen, Screen):

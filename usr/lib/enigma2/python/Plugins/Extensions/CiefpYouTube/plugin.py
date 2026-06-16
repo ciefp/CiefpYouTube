@@ -24,7 +24,7 @@ from .shortsplayer import CiefpShortsPlayer
 from .ytdownloader import YouTubeDownloaderScreen
 
 PLUGIN_NAME = "CiefpYouTube"
-PLUGIN_VERSION = "1.8"
+PLUGIN_VERSION = "1.9"
 USER_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/user_channels.json"
 LIVE_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/live_channels.json"
 PLAYLISTS_DIR = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/playlists/"
