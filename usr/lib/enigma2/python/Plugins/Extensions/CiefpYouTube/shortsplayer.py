@@ -92,7 +92,7 @@ def log_broken_link(url, title, error_msg=""):
 
 class CiefpShortsPlayer(Screen):
     skin = """
-        <screen position="0,0" size="1920,1080" title="CiefpYouTube Player" backgroundColor="#660033" flags="wfNoBorder">
+        <screen position="center,center" size="1920,1080" title="CiefpYouTube Player" backgroundColor="#660033" flags="wfNoBorder">
             <eLabel position="0,0" size="1920,100" backgroundColor="#1a1a1a" zPosition="-1" />
             <eLabel text="..:: CiefpYouTube Browser ::.." position="60,25" size="600,50" font="Regular;40" foregroundColor="#ffffff" backgroundColor="#1a1a1a" transparent="1" />
             <widget name="menu" position="60,150" size="1800,800" scrollbarMode="showOnDemand" itemHeight="50" font="Regular;28" foregroundColor="#ffffff" backgroundColor="#2a2a2a" transparent="0" />
@@ -250,7 +250,7 @@ class CiefpPlaylistPlayer(Screen):
     def __init__(self, session, playlist, start_index=0):
         alpha_hex = get_mini_skin_opacity()
         self.skin = f"""
-        <screen position="0,0" size="1920,160" title="CiefpYouTube Playlist" backgroundColor="#ff000000" flags="wfNoBorder">
+        <screen position="center,0" size="1920,160" title="CiefpYouTube Playlist" backgroundColor="#ff000000" flags="wfNoBorder">
             <eLabel position="0,0" size="1920,160" backgroundColor="#{alpha_hex}00000e" zPosition="1" />
             <eLabel text="NOW PLAYING:" position="50,20" size="180,40" font="Regular;22" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
             <widget name="title" position="240,15" size="1630,50" font="Regular;30" foregroundColor="#ffffff" backgroundColor="#{alpha_hex}00000e" transparent="1" zPosition="2" />
@@ -433,7 +433,7 @@ class CiefpWebcamPlaylistPlayer(Screen):
     def __init__(self, session, playlist, start_index=0, bouquet_version=""):
         alpha_hex = get_mini_skin_opacity()
         self.skin = f"""
-        <screen position="0,0" size="1920,160" title="CiefpYouTube WebCam" backgroundColor="#ff000000" flags="wfNoBorder">
+        <screen position="center,0" size="1920,160" title="CiefpYouTube WebCam" backgroundColor="#ff000000" flags="wfNoBorder">
             <eLabel position="0,0" size="1920,160" backgroundColor="#{alpha_hex}00000e" zPosition="1" />
             <eLabel text="NOW PLAYING:" position="50,20" size="180,40" font="Regular;22" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
             <widget name="title" position="240,15" size="1630,50" font="Regular;30" foregroundColor="#ffffff" backgroundColor="#{alpha_hex}00000e" transparent="1" zPosition="2" />

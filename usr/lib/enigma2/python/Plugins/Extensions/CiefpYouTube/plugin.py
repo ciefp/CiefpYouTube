@@ -24,7 +24,7 @@ from .shortsplayer import CiefpShortsPlayer
 from .ytdownloader import YouTubeDownloaderScreen
 
 PLUGIN_NAME = "CiefpYouTube"
-PLUGIN_VERSION = "1.9"
+PLUGIN_VERSION = "2.0"
 USER_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/user_channels.json"
 LIVE_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/live_channels.json"
 PLAYLISTS_DIR = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/playlists/"
@@ -63,27 +63,30 @@ def get_player_type():
 
 class SettingsScreen(Screen, ConfigListScreen):
     skin = """
-        <screen position="center,center" size="900,600" title="CiefpYouTube Settings" backgroundColor="#660033">
-            <widget name="config" position="30,30" size="840,440" scrollbarMode="showOnDemand" />
+        <screen position="center,center" size="1920,1080"  backgroundColor="#660033">
+            <widget name="separator0" position="0,5" size="1920,3" backgroundColor="#d5fa02" zPosition="1" />  
+            <widget name="plugin_title" position="0,10" size="1920,60" font="Bold;34" halign="center" backgroundColor="#012e01" foregroundColor="#FFFFFF" text="..:: CiefpYouTube Settings ::.." />
+            <widget name="separator1" position="0,75" size="1920,3" backgroundColor="#d5fa02" zPosition="1" /> 
+            <widget name="config" position="200,90" size="1400,820"  font="Regular;26" itemHeight="45" scrollbarMode="showOnDemand" />
 
             <!-- Bottom buttons bar -->
-            <eLabel position="20,500" size="860,70" backgroundColor="#2a2a2a" zPosition="1" />
+            <eLabel position="200,900" size="1400,70" backgroundColor="#2a2a2a" zPosition="1" />
 
             <!-- Red button (Exit) -->
-            <eLabel position="40,515" size="30,30" backgroundColor="#ff0000" zPosition="2" />
-            <eLabel text="Exit" position="80,510" size="100,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+            <eLabel position="240,915" size="30,30" backgroundColor="#ff0000" zPosition="2" />
+            <eLabel text="Exit" position="280,910" size="100,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
 
             <!-- Green button (Save) -->
-            <eLabel position="220,515" size="30,30" backgroundColor="#00ff00" zPosition="2" />
-            <eLabel text="Save" position="260,510" size="100,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+            <eLabel position="420,915" size="30,30" backgroundColor="#00ff00" zPosition="2" />
+            <eLabel text="Save" position="460,910" size="100,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
 
             <!-- Yellow button (Delete All) -->
-            <eLabel position="400,515" size="30,30" backgroundColor="#ffff00" zPosition="2" />
-            <eLabel text="Delete All" position="440,510" size="120,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+            <eLabel position="600,915" size="30,30" backgroundColor="#ffff00" zPosition="2" />
+            <eLabel text="Delete All" position="640,910" size="120,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
 
             <!-- Blue button (Delete Select) -->
-            <eLabel position="600,515" size="30,30" backgroundColor="#0000ff" zPosition="2" />
-            <eLabel text="Delete Sel" position="640,510" size="120,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+            <eLabel position="800,915" size="30,30" backgroundColor="#0000ff" zPosition="2" />
+            <eLabel text="Delete Sel" position="840,910" size="120,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
         </screen>
     """
 
@@ -94,6 +97,11 @@ class SettingsScreen(Screen, ConfigListScreen):
 
         self.settings = load_settings()
 
+        self["separator0"] = Label()
+        self["separator1"] = Label()
+        self["separator2"] = Label()
+        self["separator3"] = Label()
+        self["plugin_title"] = Label("..:: CiefpYouTube Settings ::..")
         # Quality choices
         self.quality_choices = [
             ("best", "Best Available (4K/8K)"),
@@ -287,32 +295,45 @@ class SettingsScreen(Screen, ConfigListScreen):
 
 
 class LogViewerScreen(Screen):
-    """Screen za pregled log fajla sa skrolovanjem - poboljšani skin"""
+    """Screen za pregled log fajla sa skrolovanjem - FHD"""
     skin = """
-        <screen position="center,center" size="1600,900" title="Broken Links Log Viewer" backgroundColor="#660033" flags="wfNoBorder">
+        <screen position="center,center" size="1920,1080" title="Broken Links Log Viewer" backgroundColor="#660033" flags="wfNoBorder">
+            <!-- Pozadina -->
+            <eLabel position="0,0" size="1920,1080" backgroundColor="#0a0a0a" zPosition="-1" />
+
             <!-- Naslovna traka -->
-            <eLabel position="0,0" size="1600,80" backgroundColor="#1a1a1a" zPosition="1" />
-            <eLabel text="📋 BROKEN LINKS LOG" position="30,20" size="600,50" font="Regular;32" foregroundColor="#ffcc00" backgroundColor="#00000000" transparent="1" zPosition="2" />
+            <eLabel position="0,0" size="1920,80" backgroundColor="#1a1a1a" zPosition="1" />
+            <eLabel text="📋 BROKEN LINKS LOG" position="40,20" size="600,50" font="Regular;34" foregroundColor="#ffcc00" backgroundColor="#00000000" transparent="1" zPosition="2" />
+
+            <!-- Linija ispod headera -->
+            <eLabel position="0,80" size="1920,2" backgroundColor="#ffcc00" zPosition="1" />
 
             <!-- Glavni prozor za log -->
-            <widget name="log_text" position="20,100" size="1560,700" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#1a1a1a" halign="left" valign="top" transparent="0" />
+            <widget name="log_text" position="40,100" size="1800,840" font="Regular;26" foregroundColor="#ffffff" backgroundColor="#0a0a0a" halign="left" valign="top" transparent="0" />
 
             <!-- Donja status traka -->
-            <eLabel position="0,820" size="1600,80" backgroundColor="#1a1a1a" zPosition="1" />
+            <eLabel position="0,960" size="1920,120" backgroundColor="#1a1a1a" zPosition="1" />
+
+            <!-- Linija iznad footera -->
+            <eLabel position="0,960" size="1920,2" backgroundColor="#ffcc00" zPosition="1" />
 
             <!-- Informacija o poziciji -->
-            <widget name="info" position="20,830" size="1000,50" font="Regular;24" foregroundColor="#00ffcc" backgroundColor="#00000000" transparent="1" halign="left" zPosition="2" />
+            <widget name="info" position="40,970" size="1400,50" font="Regular;24" foregroundColor="#00ffcc" backgroundColor="#00000000" transparent="1" halign="left" zPosition="2" />
 
-            <!-- Dugmad -->
-            <eLabel position="1200,835" size="50,50" backgroundColor="#ff0000" zPosition="2" />
-            <eLabel text="EXIT" position="1270,830" size="100,50" font="Regular;28" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+            <!-- Red dugme (EXIT) -->
+            <eLabel position="1500,975" size="50,50" backgroundColor="#ff0000" zPosition="2" />
+            <eLabel text="EXIT" position="1570,970" size="100,50" font="Regular;28" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
 
-            <eLabel position="1400,835" size="50,50" backgroundColor="#00ff00" zPosition="2" />
-            <eLabel text="CLEAR" position="1470,830" size="120,50" font="Regular;28" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+            <!-- Green dugme (CLEAR) -->
+            <eLabel position="1720,975" size="50,50" backgroundColor="#00ff00" zPosition="2" />
+            <eLabel text="CLEAR" position="1790,970" size="120,50" font="Regular;28" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
 
             <!-- Scroll indikatori -->
-            <eLabel text="▲" position="1550,110" size="40,40" font="Regular;30" foregroundColor="#ffcc00" backgroundColor="#00000000" transparent="1" halign="center" zPosition="2" />
-            <eLabel text="▼" position="1550,750" size="40,40" font="Regular;30" foregroundColor="#ffcc00" backgroundColor="#00000000" transparent="1" halign="center" zPosition="2" />
+            <eLabel text="▲" position="1850,120" size="40,40" font="Regular;32" foregroundColor="#ffcc00" backgroundColor="#00000000" transparent="1" halign="center" zPosition="2" />
+            <eLabel text="▼" position="1850,900" size="40,40" font="Regular;32" foregroundColor="#ffcc00" backgroundColor="#00000000" transparent="1" halign="center" zPosition="2" />
+
+            <!-- Donja linija -->
+            <eLabel position="0,1078" size="1920,2" backgroundColor="#ffcc00" zPosition="1" />
         </screen>
     """
 
@@ -324,13 +345,12 @@ class LogViewerScreen(Screen):
         self["log_text"] = Label("")
         self["info"] = Label("")
 
-        # DODAJ: Eksplicitno mapiranje za ColorActions
         self["actions"] = ActionMap(["SetupActions", "DirectionActions", "ColorActions"], {
             "cancel": self.close,
             "red": self.close,
-            "green": self.clear_log,  # Zeleno dugme
-            "yellow": self.clear_log,  # Žuto dugme kao backup
-            "blue": self.clear_log,  # Plavo dugme kao backup
+            "green": self.clear_log,
+            "yellow": self.clear_log,
+            "blue": self.clear_log,
             "up": self.scroll_up,
             "down": self.scroll_down,
             "left": self.scroll_page_up,
@@ -339,7 +359,8 @@ class LogViewerScreen(Screen):
 
         self.scroll_position = 0
         self.lines = []
-        self.max_lines_on_screen = 28
+        # Povećan broj linija za FHD
+        self.max_lines_on_screen = 32
 
         self.load_log_content()
 
@@ -350,14 +371,12 @@ class LogViewerScreen(Screen):
                 with open(self.log_file, 'r') as f:
                     content = f.read()
                 self.lines = content.split('\n')
-
-                # Prikaži prvi dio
                 self.update_display()
             else:
                 self["log_text"].setText("Log file does not exist.\n\nNo broken links recorded yet.")
                 self["info"].setText("No log file found")
         except Exception as e:
-            self["log_text"].setText(f"Error reading log file:\n{str(e)}")
+            self["log_text"].setText("Error reading log file:\n{}".format(str(e)))
             self["info"].setText("Error loading log")
 
     def update_display(self):
@@ -369,52 +388,42 @@ class LogViewerScreen(Screen):
 
         start = self.scroll_position
         end = min(start + self.max_lines_on_screen, len(self.lines))
-
-        # Prikaži vidljive linije
         visible_lines = self.lines[start:end]
         display_text = "\n".join(visible_lines)
 
-        # Dodaj info o poziciji
         total_lines = len(self.lines)
         if total_lines > 0:
             percent = int((self.scroll_position / total_lines) * 100)
             self["info"].setText(
-                f"📄 Lines: {start + 1}-{end} of {total_lines} ({percent}%) | ▲/▼ scroll | ◀/▶ page | 🟢 Clear | 🔴 Exit")
+                "Lines: {}-{} of {} ({}%) | Up/Down scroll | Left/Right page | Green: Clear | Red: Exit".format(
+                    start + 1, end, total_lines, percent))
 
-        # Ako je tekst predugačak, skrati (Label ima ograničenje)
         if len(display_text) > 10000:
             display_text = display_text[-10000:] + "\n\n... (truncated)"
-
         self["log_text"].setText(display_text)
 
     def scroll_up(self):
-        """Scroll up one line"""
         if self.scroll_position > 0:
             self.scroll_position -= 1
             self.update_display()
 
     def scroll_down(self):
-        """Scroll down one line"""
         if self.scroll_position + self.max_lines_on_screen < len(self.lines):
             self.scroll_position += 1
             self.update_display()
 
     def scroll_page_up(self):
-        """Scroll up one page"""
         if self.scroll_position > 0:
             self.scroll_position = max(0, self.scroll_position - self.max_lines_on_screen)
             self.update_display()
 
     def scroll_page_down(self):
-        """Scroll down one page"""
         if self.scroll_position + self.max_lines_on_screen < len(self.lines):
             self.scroll_position = min(len(self.lines) - self.max_lines_on_screen,
                                        self.scroll_position + self.max_lines_on_screen)
             self.update_display()
 
     def clear_log(self):
-        """Briše log fajl"""
-
         def confirm_clear(answer):
             if answer:
                 try:
@@ -423,43 +432,43 @@ class LogViewerScreen(Screen):
                     self.lines = []
                     self.scroll_position = 0
                     self.update_display()
-                    self.session.open(MessageBox, "✅ Log file cleared!", MessageBox.TYPE_INFO)
+                    self.session.open(MessageBox, "Log file cleared!", MessageBox.TYPE_INFO)
                 except Exception as e:
-                    self.session.open(MessageBox, f"❌ Error clearing log: {str(e)}", MessageBox.TYPE_ERROR)
+                    self.session.open(MessageBox, "Error clearing log: {}".format(str(e)), MessageBox.TYPE_ERROR)
 
         self.session.openWithCallback(confirm_clear, MessageBox,
-                                      "🗑️ Are you sure you want to clear the log file?\n\nThis action cannot be undone!",
+                                      "Are you sure you want to clear the log file?\n\nThis action cannot be undone!",
                                       MessageBox.TYPE_YESNO)
+
 
 class CiefpYouTubeMainMenu(Screen):
     skin = """
-        <screen position="0,0" size="1920,1080" title="CiefpYouTube" backgroundColor="#660033" flags="wfNoBorder">
+        <screen position="center,center" size="1920,1080" backgroundColor="#660033" flags="wfNoBorder">
             <eLabel position="0,0" size="1920,100" backgroundColor="#1a1a1a" zPosition="-1" />
             <eLabel text="..:: CiefpYouTube ::.." position="60,25" size="600,50" font="Regular;40" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" />
-            
+
             <widget name="menu" position="150,150" size="500,650" scrollbarMode="showOnDemand" itemHeight="55" font="Regular;28" foregroundColor="#ffffff" backgroundColor="#1a1a1a" zPosition="2" />
-            
+
             <widget name="youtube_icon" position="800,150" size="1000,650" zPosition="1" alphatest="on" />
-            
+
             <eLabel position="0,900" size="1920,50" backgroundColor="#1a1a1a" zPosition="1" />
             <widget name="status" position="0,900" size="1920,50" font="Regular;24" halign="center" foregroundColor="#ffcc00" backgroundColor="#1a1a1a" transparent="1" zPosition="2" />
-            
+
             <!-- Colored buttons -->
             <eLabel position="0,980" size="1920,100" backgroundColor="#1a1a1a" zPosition="1" />
             <eLabel position="60,1015" size="30,30" backgroundColor="red" zPosition="2" />
             <eLabel text="EXIT"  position="105,1010" size="150,40" font="Regular;30" foregroundColor="#ffffff" backgroundColor="#1a1a1a" transparent="1" zPosition="2" />
-            
+
             <eLabel position="300,1015" size="30,30" backgroundColor="green" zPosition="2" />
             <eLabel text="SEARCH"  position="345,1010" size="150,40" font="Regular;30" foregroundColor="#ffffff" backgroundColor="#1a1a1a" transparent="1" zPosition="2" />
-            
+
             <eLabel position="510,1015" size="30,30" backgroundColor="yellow" zPosition="2" />
             <eLabel text="SETTINGS" position="555,1010" size="200,40" font="Regular;30" foregroundColor="#ffffff" backgroundColor="#1a1a1a" transparent="1" zPosition="2" />
-            
+
             <eLabel position="755,1015" size="30,30" backgroundColor="blue" zPosition="2" />
             <eLabel text="ABOUT" position="795,1010" size="150,40" font="Regular;30" foregroundColor="#ffffff" backgroundColor="#1a1a1a" transparent="1" zPosition="2" />
         </screen>
     """
-
 
     def __init__(self, session):
         Screen.__init__(self, session)
