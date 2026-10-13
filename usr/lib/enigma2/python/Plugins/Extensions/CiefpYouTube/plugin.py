@@ -16,6 +16,8 @@ import threading
 import glob
 import os
 import json
+import urllib.request
+import ssl
 
 import datetime  # DODAJ OVO
 import subprocess  # DODAJ OVO (ako već nema)
@@ -24,7 +26,7 @@ from .shortsplayer import CiefpShortsPlayer
 from .ytdownloader import YouTubeDownloaderScreen
 
 PLUGIN_NAME = "CiefpYouTube"
-PLUGIN_VERSION = "2.0"
+PLUGIN_VERSION = "2.1"
 USER_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/user_channels.json"
 LIVE_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/live_channels.json"
 PLAYLISTS_DIR = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/playlists/"
@@ -87,6 +89,10 @@ class SettingsScreen(Screen, ConfigListScreen):
             <!-- Blue button (Delete Select) -->
             <eLabel position="800,915" size="30,30" backgroundColor="#0000ff" zPosition="2" />
             <eLabel text="Delete Sel" position="840,910" size="120,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
+            
+            <!-- Info dugme (Update yt-dlp) -->
+            <eLabel position="1000,915" size="30,30" backgroundColor="#00ffff" zPosition="2" />
+            <eLabel text="Update yt-dlp" position="1040,910" size="200,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
         </screen>
     """
 
@@ -101,7 +107,9 @@ class SettingsScreen(Screen, ConfigListScreen):
         self["separator1"] = Label()
         self["separator2"] = Label()
         self["separator3"] = Label()
-        self["plugin_title"] = Label("..:: CiefpYouTube Settings ::..")
+        # U SettingsScreen.__init__, posle self["plugin_title"]:
+        current_ver = self.get_ytdlp_version()
+        self["plugin_title"] = Label(f"..:: CiefpYouTube Settings | yt-dlp: {current_ver} ::..")
         # Quality choices
         self.quality_choices = [
             ("best", "Best Available (4K/8K)"),
@@ -156,13 +164,20 @@ class SettingsScreen(Screen, ConfigListScreen):
             choices=self.webcam_timeout_choices,
             default=self.settings.get('webcam_timeout', '20')
         )
-
         self.list = []
         self.list.append(getConfigListEntry("Video Quality:", self.quality_entry))
         self.list.append(getConfigListEntry("Max Results per Search:", self.results_entry))
         self.list.append(getConfigListEntry("Mini Skin Opacity:", self.mini_opacity_entry))
         self.list.append(getConfigListEntry("Media Player Type:", self.player_entry))
         self.list.append(getConfigListEntry("Webcam Auto-Switch Timeout:", self.webcam_timeout_entry))
+
+        # Prikaz verzije yt-dlp (read-only)
+        current_ver = self.get_ytdlp_version()
+        self.version_entry = ConfigSelection(
+            choices=[(current_ver, current_ver)],
+            default=current_ver
+        )
+        self.list.append(getConfigListEntry("yt-dlp version (Info=Update):", self.version_entry))
 
         ConfigListScreen.__init__(self, self.list, session=self.session)
 
@@ -176,9 +191,94 @@ class SettingsScreen(Screen, ConfigListScreen):
             "green": self.save,
             "yellow": self.delete_all_playlists,
             "blue": self.delete_select_playlist,
+            "info": self.update_ytdlp,
             "cancel": self.cancel,
             "ok": self.save,
         }, -2)
+
+    def get_ytdlp_version(self):
+        """Vraća trenutnu verziju yt-dlp."""
+        try:
+            result = subprocess.run(['/usr/bin/yt-dlp', '--version'],
+                                    capture_output=True, text=True, timeout=15)
+            if result.returncode == 0:
+                return result.stdout.strip()
+        except:
+            pass
+        return "unknown"
+
+    def update_ytdlp(self):
+        """Preuzima najnoviju nightly verziju yt-dlp."""
+        msg = "This will download the latest yt-dlp nightly build from GitHub.\n\nProceed?"
+        self.session.openWithCallback(self.confirm_update_ytdlp, MessageBox, msg, MessageBox.TYPE_YESNO)
+
+    def confirm_update_ytdlp(self, answer):
+        if not answer:
+            return
+
+        old_version = self.get_ytdlp_version()
+        self.session.open(MessageBox,
+                          f"Current version: {old_version}\n\nDownloading latest nightly...\nPlease wait.",
+                          MessageBox.TYPE_INFO, timeout=5)
+
+        def worker():  # <-- unutar metode, ima pristup self
+            try:
+                # Backup
+                if os.path.exists('/usr/bin/yt-dlp'):
+                    subprocess.run(['/bin/cp', '/usr/bin/yt-dlp', '/usr/bin/yt-dlp.backup'])
+
+                url = "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp"
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, context=ctx, timeout=60) as response:
+                    data = response.read()
+
+                if len(data) < 1000000:
+                    from twisted.internet import reactor
+                    reactor.callFromThread(self.update_ytdlp_result, False,
+                                           f"Downloaded file too small: {len(data)} bytes")
+                    return
+
+                with open('/usr/bin/yt-dlp.new', 'wb') as f:
+                    f.write(data)
+
+                os.chmod('/usr/bin/yt-dlp.new', 0o755)
+                os.rename('/usr/bin/yt-dlp.new', '/usr/bin/yt-dlp')
+
+                ver = subprocess.run(['/usr/bin/yt-dlp', '--version'],
+                                     capture_output=True, text=True, timeout=15)
+                version = ver.stdout.strip() if ver.returncode == 0 else "unknown"
+
+                from twisted.internet import reactor
+                reactor.callFromThread(self.update_ytdlp_result, True,
+                                       f"Updated successfully!\nOld: {old_version}\nNew: {version}")
+
+            except Exception as e:
+                from twisted.internet import reactor
+                reactor.callFromThread(self.update_ytdlp_result, False, str(e)[:200])
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def update_ytdlp_result(self, success, message):
+        """Callback nakon update-a."""
+        if success:
+            # Osveži verziju u listi (ako je moguće bez restarta)
+            try:
+                new_ver = self.get_ytdlp_version()
+                self.version_entry.setValue(new_ver)
+                self.version_entry.value = new_ver
+                self["config"].invalidate(self.version_entry)
+            except:
+                pass
+
+            self.session.open(MessageBox,
+                              f"{message}\n\nRestart Settings to see updated version.",
+                              MessageBox.TYPE_INFO)
+        else:
+            self.session.open(MessageBox, f"Update failed:\n{message}", MessageBox.TYPE_ERROR)
 
     def delete_all_playlists(self):
         """Briše sve plejliste iz PLAYLISTS_DIR"""

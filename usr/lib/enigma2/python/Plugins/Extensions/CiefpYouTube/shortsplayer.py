@@ -14,6 +14,56 @@ import json
 
 SETTINGS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/settings.json"
 BROKEN_LINKS_LOG = "/tmp/ciefp_youtube_broken_links.log"
+YT_CACHE_FILE = "/tmp/ciefp_yt_cache.json"
+CACHE_TTL = 5 * 3600
+
+
+def _load_cache():
+    try:
+        if os.path.exists(YT_CACHE_FILE):
+            with open(YT_CACHE_FILE, 'r') as f:
+                return json.load(f)
+    except:
+        pass
+    return {}
+
+
+def _save_cache(cache):
+    try:
+        with open(YT_CACHE_FILE, 'w') as f:
+            json.dump(cache, f)
+    except:
+        pass
+
+
+def _extract_video_id(url):
+    """Izvlači YouTube video ID iz URL-a."""
+    import re
+    m = re.search(r'(?:v=|youtu\.be/|shorts/)([A-Za-z0-9_-]{11})', url)
+    return m.group(1) if m else url
+
+
+def get_cached_url(url):
+    """Vraća keširani direktni URL ako postoji i nije istekao."""
+    cache = _load_cache()
+    vid = _extract_video_id(url)
+    entry = cache.get(vid)
+    if entry:
+        ts, direct = entry
+        if time.time() - ts < CACHE_TTL:
+            return direct
+    return None
+
+
+def set_cached_url(url, direct):
+    cache = _load_cache()
+    vid = _extract_video_id(url)
+    cache[vid] = (time.time(), direct)
+    # Očisti stare
+    now = time.time()
+    cache = {k: v for k, v in cache.items() if now - v[0] < CACHE_TTL}
+    _save_cache(cache)
+
 
 def get_mini_skin_opacity():
     settings_file = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/settings.json"
@@ -32,6 +82,7 @@ def get_mini_skin_opacity():
         pass
     return '80'
 
+
 def load_quality_setting():
     try:
         if os.path.exists(SETTINGS_FILE):
@@ -42,18 +93,20 @@ def load_quality_setting():
         pass
     return '720'
 
+
 def get_video_format(quality):
+    """Vraća format za yt-dlp koji daje JEDAN link (video+audio zajedno)."""
     if quality == "2160":
-        return 'best[height<=2160][ext=mp4]/best'
+        return 'best[height<=2160][ext=mp4]/best[ext=mp4]/best'
     elif quality == "1080":
-        return 'best[height<=1080][ext=mp4]/best'
+        return 'best[height<=1080][ext=mp4]/best[ext=mp4]/best'
     elif quality == "720":
-        return 'best[height<=720][ext=mp4]/best'
+        return 'best[height<=720][ext=mp4]/best[ext=mp4]/best'
     else:
         return 'best[ext=mp4]/best'
 
+
 def get_player_type():
-    """Vraća tip playera iz settings (4097, 5001, 5002 ili movieplayer)"""
     settings_file = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/settings.json"
     try:
         if os.path.exists(settings_file):
@@ -63,6 +116,7 @@ def get_player_type():
     except:
         pass
     return '4097'
+
 
 def get_webcam_timeout():
     settings_file = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/settings.json"
@@ -74,6 +128,7 @@ def get_webcam_timeout():
     except:
         pass
     return 20
+
 
 def log_broken_link(url, title, error_msg=""):
     try:
@@ -90,6 +145,49 @@ def log_broken_link(url, title, error_msg=""):
         pass
 
 
+def extract_with_ytdlp(url):
+    """
+    Ekstrahuje direktni stream URL koristeći yt-dlp subprocess.
+    Forsira node kao JS runtime (brže od quickjs na ARM-u).
+    Vraća (direct_url, error_msg).
+    """
+    quality = load_quality_setting()
+    video_format = get_video_format(quality)
+
+    try:
+        cmd = [
+            'yt-dlp',
+            '-g',
+            '-f', video_format,
+            '--no-warnings',
+            '--no-check-formats',
+            '--js-runtimes', 'node',
+            url
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().split('\n')[0], None
+
+        # Fallback 1: best bez restrikcija
+        cmd2 = [
+            'yt-dlp', '-g', '-f', 'best',
+            '--no-warnings', '--no-check-formats',
+            '--js-runtimes', 'node', url
+        ]
+        r2 = subprocess.run(cmd2, capture_output=True, text=True, timeout=90)
+        if r2.returncode == 0 and r2.stdout.strip():
+            return r2.stdout.strip().split('\n')[0], None
+
+        err = (r2.stderr or result.stderr or "unknown")[:200]
+        return None, err
+
+    except subprocess.TimeoutExpired:
+        return None, "timeout (>90s)"
+    except Exception as e:
+        return None, str(e)[:200]
+
+
 class CiefpShortsPlayer(Screen):
     skin = """
         <screen position="center,center" size="1920,1080" title="CiefpYouTube Player" backgroundColor="#660033" flags="wfNoBorder">
@@ -101,7 +199,6 @@ class CiefpShortsPlayer(Screen):
         </screen>
     """
 
-    # U CiefpShortsPlayer klasi, izmijeni __init__ metod:
     def __init__(self, session, playlist, webcam_mode=False, bouquet_version=""):
         Screen.__init__(self, session)
         self.session = session
@@ -110,7 +207,6 @@ class CiefpShortsPlayer(Screen):
         self.webcam_mode = webcam_mode
         self.bouquet_version = bouquet_version
 
-        # Provjeri da li neki video u playlisti ima bouquet_version
         if not self.webcam_mode and not self.bouquet_version:
             for video in playlist:
                 if 'bouquet_version' in video:
@@ -141,7 +237,6 @@ class CiefpShortsPlayer(Screen):
     def okClicked(self):
         self.index = self["menu"].getSelectedIndex()
 
-        # ZA WEBCAM: Prikaži ChoiceBox sa opcijama single/playlist
         if self.webcam_mode:
             choices = [
                 ("Play this video only", "single"),
@@ -151,7 +246,6 @@ class CiefpShortsPlayer(Screen):
                                           title="Select playback mode:", list=choices)
             return
 
-        # ZA OBIČNE PLAYLISTE: Originalni kod
         choices = [
             ("Play this video only", "single"),
             ("Play entire playlist in sequence (Mini Skin)", "playlist")
@@ -160,17 +254,14 @@ class CiefpShortsPlayer(Screen):
                                       title="Select playback mode:", list=choices)
 
     def webcam_choice_callback(self, answer):
-        """Callback za webcam izbor (isti kao choiceCallback ali sa webcam_mode)"""
         if answer:
             mode = answer[1]
             if mode == "single":
                 current_video = self.playlist[self.index]
                 url = current_video.get('url')
                 title = current_video.get('title', 'Video')
-                self["status"].setText("Loading stream...")
-                threading.Thread(target=self.extractAndPlaySingle, args=(url, title), daemon=True).start()
+                self.start_extract_and_play(url, title)
             elif mode == "playlist":
-                # Za webcam playlistu, pošalji webcam_mode=True
                 self.session.open(CiefpWebcamPlaylistPlayer, self.playlist, self.index, self.bouquet_version)
 
     def choiceCallback(self, answer):
@@ -180,70 +271,74 @@ class CiefpShortsPlayer(Screen):
                 current_video = self.playlist[self.index]
                 url = current_video.get('url')
                 title = current_video.get('title', 'Video')
-                self["status"].setText("Loading stream...")
-                threading.Thread(target=self.extractAndPlaySingle, args=(url, title), daemon=True).start()
+                self.start_extract_and_play(url, title)
             elif mode == "playlist":
                 self.session.open(CiefpPlaylistPlayer, self.playlist, self.index)
 
-    def extractAndPlaySingle(self, url, title):
-        quality = load_quality_setting()
-        video_format = get_video_format(quality)
-        try:
-            cmd = ['yt-dlp', '-g', '-f', video_format, '--no-warnings', url]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode == 0 and result.stdout.strip():
-                video_url = result.stdout.strip().split('\n')[0]
-                from twisted.internet import reactor
-                reactor.callFromThread(self.closeAndPlay, video_url, title)
-            else:
-                cmd_fallback = ['yt-dlp', '-g', '-f', 'best', '--no-warnings', url]
-                result_fallback = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=30)
-                if result_fallback.returncode == 0 and result_fallback.stdout.strip():
-                    video_url = result_fallback.stdout.strip().split('\n')[0]
-                    from twisted.internet import reactor
-                    reactor.callFromThread(self.closeAndPlay, video_url, title)
-                else:
-                    from twisted.internet import reactor
-                    reactor.callFromThread(self.showErrorMsg, "Cannot extract stream URL")
-        except Exception as e:
-            # Loguj neispravan link za single play
-            log_broken_link(url, title, str(e)[:30])
-            from twisted.internet import reactor
-            reactor.callFromThread(self.showErrorMsg, str(e)[:30])
 
-    def closeAndPlay(self, video_url, title):
-        """Zatvori trenutni prozor i pusti stream - single play"""
+    def start_extract_and_play(self, url, title):
+        """Pokreće ekstrakciju u thread-u - Enigma2 ne blokira."""
+        cached = get_cached_url(url)
+        if cached:
+            print(f"[CiefpYouTube] Using cached URL for {title[:40]}")
+            self._play_direct(cached, title)
+            return
+
+        self["status"].setText("Extracting stream URL (please wait)...")
+
+        def worker():
+            direct, err = extract_with_ytdlp(url)
+            from twisted.internet import reactor
+            if direct:
+                set_cached_url(url, direct)
+                reactor.callFromThread(self._play_direct, direct, title)
+            else:
+                reactor.callFromThread(self._play_error, url, title, err)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _play_direct(self, direct_url, title):
+        """Pusti već ekstrahovani direktni URL."""
         try:
             player_type = get_player_type()
-            print(f"[CiefpYouTube] Single play - player_type: '{player_type}'")
+            print(f"[CiefpYouTube] Playing direct URL - player_type: '{player_type}'")
 
             if player_type == "movieplayer":
-                # Ne zatvaraj odmah, prvo otvori MoviePlayer pa onda zatvori
                 from Screens.InfoBar import MoviePlayer
-                ref = eServiceReference(4097, 0, video_url)
+                ref = eServiceReference(4097, 0, direct_url)
                 ref.setName(title)
-                # Otvori MoviePlayer sa callback-om da zatvori CiefpShortsPlayer
                 self.session.openWithCallback(self.close, MoviePlayer, ref)
-            elif player_type == "5001":  # Exteplayer3
+            else:
                 self.close()
                 time.sleep(0.3)
-                ref = eServiceReference(5001, 0, video_url)
-                ref.setName(title)
-                self.session.nav.playService(ref)
-            else:  # 4097 ili 5002
-                self.close()
-                time.sleep(0.3)
-                ref = eServiceReference(5002, 0, video_url)
+                ref = eServiceReference(4097, 0, direct_url)
                 ref.setName(title)
                 self.session.nav.playService(ref)
         except Exception as e:
-            print(f"[CiefpYouTube] Error in closeAndPlay: {e}")
+            print(f"[CiefpYouTube] Error in _play_direct: {e}")
 
-    def showErrorMsg(self, error_msg):
-        self["status"].setText(f"Error: {error_msg}")
-        timer = eTimer()
-        timer.callback.append(self.close)
-        timer.start(2000, True)
+    def _play_error(self, orig_url, title, err):
+        """Fallback: probaj preko YT-DLP:// protokola."""
+        print(f"[CiefpYouTube] Subprocess failed ({err}); falling back to YT-DLP://")
+        log_broken_link(orig_url, title, str(err)[:100])
+        self["status"].setText("Using fallback YT-DLP:// (may be slow)...")
+
+        try:
+            player_type = get_player_type()
+            yt_service_url = f"YT-DLP://{orig_url}"
+            if player_type == "movieplayer":
+                from Screens.InfoBar import MoviePlayer
+                ref = eServiceReference(4097, 0, yt_service_url)
+                ref.setName(title)
+                self.session.openWithCallback(self.close, MoviePlayer, ref)
+            else:
+                self.close()
+                time.sleep(0.3)
+                ref = eServiceReference(4097, 0, yt_service_url)
+                ref.setName(title)
+                self.session.nav.playService(ref)
+        except Exception as e:
+            print(f"[CiefpYouTube] Fallback failed: {e}")
 
 
 class CiefpPlaylistPlayer(Screen):
@@ -295,6 +390,27 @@ class CiefpPlaylistPlayer(Screen):
 
         self.startExtraction()
 
+        # ISPRAVNO - CiefpPlaylistPlayer nema webcam_mode:
+        self.preload_playlist(self.playlist, count=2)
+
+    def preload_playlist(self, playlist, start_index=0, count=2):
+        """Preload trenutnog i sledećeg videa (ne unapred sve)."""
+
+        def worker():
+            # Uzmi trenutni + sledeći (start_index, start_index+1)
+            end = min(start_index + count, len(playlist))
+            for video in playlist[start_index:end]:
+                url = video.get('url')
+                if not url:
+                    continue
+                if not get_cached_url(url):
+                    direct, err = extract_with_ytdlp(url)
+                    if direct:
+                        set_cached_url(url, direct)
+                        print(f"[CiefpYouTube] Preloaded: {video.get('title', '')[:40]}")
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def updateTime(self):
         try:
             import time
@@ -320,41 +436,89 @@ class CiefpPlaylistPlayer(Screen):
             self["next_title"].setText("End playlist")
 
         self["playlist_info"].setText(f"Song: {self.index + 1} of {len(self.playlist)}")
-        threading.Thread(target=self.extractThread, args=(url, title), daemon=True).start()
 
-    def extractThread(self, url, title):
-        quality = load_quality_setting()
-        video_format = get_video_format(quality)
-        try:
-            cmd = ['yt-dlp', '-g', '-f', video_format, '--no-warnings', url]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode == 0 and result.stdout.strip():
-                video_url = result.stdout.strip().split('\n')[0]
-                from twisted.internet import reactor
-                reactor.callFromThread(self.playVideoDirect, video_url, title)
-            else:
-                cmd_fallback = ['yt-dlp', '-g', '-f', 'best', '--no-warnings', url]
-                result_fallback = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=30)
-                if result_fallback.returncode == 0 and result_fallback.stdout.strip():
-                    video_url = result_fallback.stdout.strip().split('\n')[0]
-                    from twisted.internet import reactor
-                    reactor.callFromThread(self.playVideoDirect, video_url, title)
-                else:
-                    from twisted.internet import reactor
-                    reactor.callFromThread(self.showError, "Link error")
-        except Exception as e:
+        # Preload SAMO sledeći video (trenutni se ekstrahuje odmah ispod)
+        if self.index + 1 < len(self.playlist):
+            self.preload_next(self.playlist, self.index + 1)
+
+        # Provjeri keš za trenutni video
+        cached = get_cached_url(url)
+        if cached:
+            self._play_direct(cached, title)
+            return
+
+        self["status"].setText("Extracting...")
+
+        def worker():
+            direct, err = extract_with_ytdlp(url)
             from twisted.internet import reactor
-            reactor.callFromThread(self.showError, str(e)[:30])
+            if direct:
+                set_cached_url(url, direct)
+                reactor.callFromThread(self._play_direct, direct, title)
+            else:
+                reactor.callFromThread(self._play_error, url, title, err)
 
-    def playVideoDirect(self, video_url, title):
+        threading.Thread(target=worker, daemon=True).start()
+
+    def preload_next(self, playlist, next_index):
+        """Preload samo jednog videa (sledećeg)."""
+
+        def worker():
+            if next_index >= len(playlist):
+                return
+            video = playlist[next_index]
+            url = video.get('url')
+            if not url:
+                return
+            if get_cached_url(url):
+                return
+            direct, err = extract_with_ytdlp(url)
+            if direct:
+                set_cached_url(url, direct)
+                print(f"[CiefpYouTube] Preloaded next: {video.get('title', '')[:40]}")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def preload_playlist(self, playlist, start_index=0, count=2):
+        """Preload trenutnog i sledećeg videa u pozadinskom thread-u."""
+
+        def worker():
+            end = min(start_index + count, len(playlist))
+            for video in playlist[start_index:end]:
+                url = video.get('url')
+                if not url:
+                    continue
+                if not get_cached_url(url):
+                    direct, err = extract_with_ytdlp(url)
+                    if direct:
+                        set_cached_url(url, direct)
+                        print(f"[CiefpYouTube] Preloaded: {video.get('title', '')[:40]}")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _play_direct(self, direct_url, title):
         try:
-            ref = eServiceReference(5002, 0, video_url)
+            ref = eServiceReference(4097, 0, direct_url)
             ref.setName(title)
             self.session.nav.playService(ref)
             self["status"].setText("")
             self.playlist_timer.start(1000, False)
         except Exception as e:
             print(f"[CiefpYouTube] Error: {e}")
+            self.showError(str(e)[:30])
+
+    def _play_error(self, orig_url, title, err):
+        print(f"[CiefpYouTube] Extract failed: {err}; using YT-DLP:// fallback")
+        log_broken_link(orig_url, title, str(err)[:100])
+        try:
+            yt_service_url = f"YT-DLP://{orig_url}"
+            ref = eServiceReference(4097, 0, yt_service_url)
+            ref.setName(title)
+            self.session.nav.playService(ref)
+            self["status"].setText("")
+            self.playlist_timer.start(1000, False)
+        except Exception as e:
+            self.showError(str(e)[:30])
 
     def playlistTimerCallback(self):
         self.play_count += 1
@@ -411,7 +575,6 @@ class CiefpPlaylistPlayer(Screen):
             pass
 
     def showError(self, error_msg):
-        # Loguj neispravan link
         if hasattr(self, 'playlist') and self.index < len(self.playlist):
             current_video = self.playlist[self.index]
             log_broken_link(
@@ -419,7 +582,6 @@ class CiefpPlaylistPlayer(Screen):
                 current_video.get('title', 'unknown'),
                 error_msg
             )
-
         self["title"].setText(f"Error: {error_msg}. Skipping...")
         self.nextVideo()
 
@@ -453,8 +615,10 @@ class CiefpWebcamPlaylistPlayer(Screen):
         self.bouquet_version = bouquet_version
         self.webcam_timeout = get_webcam_timeout()
         self.auto_switch_timer = None
+        self.countdown_timer = None
+        self.countdown = 0
         self.is_paused = False
-        self.is_loading = False  # DODATO: flag za učitavanje
+        self.is_loading = False
 
         self["title"] = Label("Loading...")
         self["next_title"] = Label("")
@@ -464,7 +628,6 @@ class CiefpWebcamPlaylistPlayer(Screen):
         self["time"] = Label("")
         version_text = bouquet_version[:100] if len(bouquet_version) > 100 else bouquet_version
         self["bouquet_version"] = Label(version_text)
-        self["bouquet_version"] = Label(bouquet_version[:100] if len(bouquet_version) > 100 else bouquet_version)
 
         self["actions"] = ActionMap(["SetupActions", "DirectionActions"], {
             "cancel": self.handleExit,
@@ -489,66 +652,75 @@ class CiefpWebcamPlaylistPlayer(Screen):
     def startExtraction(self):
         if self.auto_switch_timer:
             self.auto_switch_timer.stop()
+        if self.countdown_timer:
+            self.countdown_timer.stop()
 
-        # Provjeri da li smo preko kraja liste
         if self.index >= len(self.playlist):
-            # Kraj liste - završavamo
             self["status"].setText("End of playlist reached")
             self.handleExit()
             return
 
-        # ... ostatak koda (isti)
         current_video = self.playlist[self.index]
         url = current_video.get('url')
         title = current_video.get('title', 'Camera')
 
-        # DODATO: Prikaži "Loading..." dok se stream učitava
         self["title"].setText(f"⏳ Loading: {title}...")
         self["status"].setText("Loading stream...")
         self.is_loading = True
 
-        # Pripremi NEXT naziv (bit će prikazan kada nova kamera počne)
         if self.index + 1 < len(self.playlist):
-            next_title = self.playlist[self.index + 1].get('title', '')
-            self.pending_next_title = next_title
+            self.pending_next_title = self.playlist[self.index + 1].get('title', '')
         else:
             self.pending_next_title = self.playlist[0].get('title', '') if self.playlist else ""
 
         self["playlist_info"].setText(f"Camera: {self.index + 1} of {len(self.playlist)}")
 
-        threading.Thread(target=self.extractThread, args=(url, title), daemon=True).start()
+        # Preload sledeće kamere u pozadini
+        if self.index + 1 < len(self.playlist):
+            self.preload_next(self.playlist, self.index + 1)
 
-    def extractThread(self, url, title):
-        quality = load_quality_setting()
-        video_format = get_video_format(quality)
-        try:
-            cmd = ['yt-dlp', '-g', '-f', video_format, '--no-warnings', url]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode == 0 and result.stdout.strip():
-                video_url = result.stdout.strip().split('\n')[0]
-                from twisted.internet import reactor
-                reactor.callFromThread(self.playVideoDirect, video_url, title)
-            else:
-                cmd_fallback = ['yt-dlp', '-g', '-f', 'best', '--no-warnings', url]
-                result_fallback = subprocess.run(cmd_fallback, capture_output=True, text=True, timeout=30)
-                if result_fallback.returncode == 0 and result_fallback.stdout.strip():
-                    video_url = result_fallback.stdout.strip().split('\n')[0]
-                    from twisted.internet import reactor
-                    reactor.callFromThread(self.playVideoDirect, video_url, title)
-                else:
-                    from twisted.internet import reactor
-                    reactor.callFromThread(self.showError, "Cannot extract stream")
-        except Exception as e:
+        # Provjeri keš za trenutnu kameru
+        cached = get_cached_url(url)
+        if cached:
+            self._play_direct(cached, title)
+            return
+
+        def worker():
+            direct, err = extract_with_ytdlp(url)
             from twisted.internet import reactor
-            reactor.callFromThread(self.showError, str(e)[:30])
+            if direct:
+                set_cached_url(url, direct)
+                reactor.callFromThread(self._play_direct, direct, title)
+            else:
+                reactor.callFromThread(self._play_error, url, title, err)
 
-    def playVideoDirect(self, video_url, title):
+        threading.Thread(target=worker, daemon=True).start()
+
+    def preload_next(self, playlist, next_index):
+        """Preload samo sledeće kamere."""
+
+        def worker():
+            if next_index >= len(playlist):
+                return
+            video = playlist[next_index]
+            url = video.get('url')
+            if not url:
+                return
+            if get_cached_url(url):
+                return
+            direct, err = extract_with_ytdlp(url)
+            if direct:
+                set_cached_url(url, direct)
+                print(f"[CiefpYouTube] Preloaded next cam: {video.get('title', '')[:40]}")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _play_direct(self, direct_url, title):
         try:
-            ref = eServiceReference(5002, 0, video_url)
+            ref = eServiceReference(4097, 0, direct_url)
             ref.setName(title)
             self.session.nav.playService(ref)
 
-            # DODATO: Tek sada promijeni nazive (stream je učitan)
             self["title"].setText(title)
             self["next_title"].setText(self.pending_next_title)
             self["status"].setText("")
@@ -558,10 +730,30 @@ class CiefpWebcamPlaylistPlayer(Screen):
         except Exception as e:
             print(f"[CiefpYouTube] Error: {e}")
             self.is_loading = False
+            self.showError(str(e)[:30])
+
+    def _play_error(self, orig_url, title, err):
+        print(f"[CiefpYouTube] WebCam extract failed: {err}; YT-DLP:// fallback")
+        log_broken_link(orig_url, title, str(err)[:100])
+        try:
+            yt_service_url = f"YT-DLP://{orig_url}"
+            ref = eServiceReference(4097, 0, yt_service_url)
+            ref.setName(title)
+            self.session.nav.playService(ref)
+            self["title"].setText(title)
+            self["next_title"].setText(self.pending_next_title)
+            self["status"].setText("")
+            self.is_loading = False
+            self.start_auto_switch_timer()
+        except Exception as e:
+            self.is_loading = False
+            self.showError(str(e)[:30])
 
     def start_auto_switch_timer(self):
         if self.auto_switch_timer:
             self.auto_switch_timer.stop()
+        if self.countdown_timer:
+            self.countdown_timer.stop()
 
         self.countdown = self.webcam_timeout
         self.countdown_timer = eTimer()
@@ -603,14 +795,11 @@ class CiefpWebcamPlaylistPlayer(Screen):
             self.countdown_timer.stop()
         self.is_paused = False
 
-        # Provjeri da li smo na zadnjoj kameri
         if self.index >= len(self.playlist) - 1:
-            # Ovo je zadnja kamera, završavamo reprodukciju
             self["status"].setText("End of playlist reached")
             self.handleExit()
             return
 
-        # DODATO: Prije prebacivanja, pripremi se za novu kameru
         self.is_loading = True
         self.index += 1
         self.startExtraction()
@@ -625,7 +814,6 @@ class CiefpWebcamPlaylistPlayer(Screen):
             self.countdown_timer.stop()
         self.is_paused = False
 
-        # DODATO: Prije prebacivanja, pripremi se za novu kameru
         self.is_loading = True
 
         if self.index > 0:
@@ -656,7 +844,6 @@ class CiefpWebcamPlaylistPlayer(Screen):
             pass
 
     def showError(self, error_msg):
-        # Loguj neispravan link
         if hasattr(self, 'playlist') and self.index < len(self.playlist):
             current_video = self.playlist[self.index]
             log_broken_link(
@@ -664,7 +851,6 @@ class CiefpWebcamPlaylistPlayer(Screen):
                 current_video.get('title', 'unknown'),
                 error_msg
             )
-
         self["title"].setText(f"Error: {error_msg}. Skipping...")
         self.is_loading = False
         self.nextVideo()
@@ -676,4 +862,3 @@ class CiefpWebcamPlaylistPlayer(Screen):
             self.countdown_timer.stop()
         self.session.nav.stopService()
         self.close()
-

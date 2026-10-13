@@ -305,7 +305,15 @@ class DownloadManager:
         
         download_path = get_download_path()
         safe_title = get_safe_filename(title)
-        
+        # Provera ffmpeg za MP3 konverziju
+        if format_type == 'mp3' and not os.path.exists('/usr/bin/ffmpeg'):
+            log_download(url, title, "", success=False, error_msg="ffmpeg not installed")
+            self.completed_count += 1
+            if self.callback:
+                self.callback('error', title, self.completed_count, self.total_count, "ffmpeg missing")
+            self.is_downloading = False
+            self.start_next_download()
+            return
         if format_type == 'mp3':
             output_template = os.path.join(download_path, f"{safe_title}.%(ext)s")
             cmd = [
@@ -318,25 +326,33 @@ class DownloadManager:
                 '--no-warnings',
                 '--no-progress',
                 '--restrict-filenames',
+                '--retries', '3',
+                '--no-playlist',
                 url
             ]
             extension = 'mp3'
-        else:
+            timeout = 600
+        else:  # mp4 - MERGE video+audio za FHD
             output_template = os.path.join(download_path, f"{safe_title}.%(ext)s")
             cmd = [
                 'yt-dlp',
-                '-f', 'best[ext=mp4]/best',
+                '-f',
+                'bestvideo[height<=1080][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[height<=1080][vcodec^=avc1]+bestaudio/best[height<=1080][vcodec^=avc1]/best',
+                '--merge-output-format', 'mp4',
                 '-o', output_template,
                 '--no-warnings',
                 '--no-progress',
-                '--restrict-filenames',
+                '--retries', '3',
+                '--no-overwrites',
+                '--no-playlist',
                 url
             ]
             extension = 'mp4'
-        
+            timeout = 1800
+
         try:
             print(f"[DownloadManager] Starting: {title}")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
             
             if result.returncode == 0:
                 downloaded_file = None
@@ -728,20 +744,22 @@ class YouTubeDownloaderScreen(Screen):
             ("Play & Download as MP3", "mp3")
         ]
         self.session.openWithCallback(self.play_download_callback, ChoiceBox, title="Play and Download:", list=choices)
-    
+
     def play_download_callback(self, answer):
         if not answer:
             return
-        
+
         format_type = answer[1]
         first_video = self.selected_videos[0]
-        
+
+        # Pokreni download
         self.start_download(format_type)
-        
+
+        # Pusti prvi video - DownloadManager nastavlja u pozadini
         from .shortsplayer import CiefpShortsPlayer
         self.session.open(CiefpShortsPlayer, [first_video])
-        self.close()
-    
+        # NE ZATVARAJ - ostavi screen otvoren da DownloadManager može da ažurira status
+
     def update_info(self):
         count = len(self.selected_videos)
         focus_text = "LEFT" if self.focus == "left" else "RIGHT"

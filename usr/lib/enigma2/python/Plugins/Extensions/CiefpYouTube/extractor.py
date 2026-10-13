@@ -4,17 +4,16 @@ import yt_dlp
 class ShortsExtractor:
     def __init__(self, quality="1080", max_results=15):
         self.max_results = max_results
-        
-        # Format based on quality setting
+
         if quality == "1080":
             video_format = 'best[height<=1080]'
         elif quality == "720":
             video_format = 'best[height<=720]'
         elif quality == "2160":
             video_format = 'best[height<=2160]'
-        else:  # best
+        else:
             video_format = 'best'
-        
+
         self.ydl_opts = {
             'format': f'{video_format}+bestaudio/best',
             'quiet': True,
@@ -22,7 +21,9 @@ class ShortsExtractor:
             'extract_flat': 'in_playlist',
             'playlistend': max_results,
             'ignoreerrors': True,
+            'extractor-args': 'youtube:player_client=android,web',
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'js_runtimes': {'node': {}},  # <-- ISPRAVNO - dict, ne string
         }
 
     def get_shorts_list(self, source_type, search_term=None):
