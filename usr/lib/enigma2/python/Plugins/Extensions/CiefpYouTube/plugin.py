@@ -26,7 +26,7 @@ from .shortsplayer import CiefpShortsPlayer
 from .ytdownloader import YouTubeDownloaderScreen
 
 PLUGIN_NAME = "CiefpYouTube"
-PLUGIN_VERSION = "2.1"
+PLUGIN_VERSION = "2.2"
 USER_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/user_channels.json"
 LIVE_CHANNELS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/live_channels.json"
 PLAYLISTS_DIR = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/playlists/"
@@ -39,6 +39,9 @@ def load_settings():
         'mini_skin_opacity': '50',
         'player_type': '4097',
         'webcam_timeout': '20',
+        'playback_mode': 'ask',
+        'cache_path': '/hdd/movie/YouTube_Cache/',
+        'auto_delete_cache': 'yes',
     }
 
     if os.path.exists(SETTINGS_FILE):
@@ -95,7 +98,6 @@ class SettingsScreen(Screen, ConfigListScreen):
             <eLabel text="Update yt-dlp" position="1040,910" size="200,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#00000000" transparent="1" zPosition="2" />
         </screen>
     """
-
     def __init__(self, session, callback):
         Screen.__init__(self, session)
         self.session = session
@@ -107,10 +109,9 @@ class SettingsScreen(Screen, ConfigListScreen):
         self["separator1"] = Label()
         self["separator2"] = Label()
         self["separator3"] = Label()
-        # U SettingsScreen.__init__, posle self["plugin_title"]:
-        current_ver = self.get_ytdlp_version()
-        self["plugin_title"] = Label(f"..:: CiefpYouTube Settings | yt-dlp: {current_ver} ::..")
-        # Quality choices
+        self["plugin_title"] = Label("..:: CiefpYouTube Settings ::..")
+
+        # ===== Quality choices =====
         self.quality_choices = [
             ("best", "Best Available (4K/8K)"),
             ("2160", "4K UHD (2160p)"),
@@ -118,7 +119,7 @@ class SettingsScreen(Screen, ConfigListScreen):
             ("720", "HD Ready (720p)")
         ]
 
-        # Results choices
+        # ===== Results choices =====
         self.results_choices = [
             ("10", "10 videos"), ("20", "20 videos"), ("30", "30 videos"),
             ("40", "40 videos"), ("50", "50 videos"), ("100", "100 videos"),
@@ -126,7 +127,7 @@ class SettingsScreen(Screen, ConfigListScreen):
             ("300", "300 videos")
         ]
 
-        # Opacity choices
+        # ===== Opacity choices =====
         self.mini_opacity_choices = [
             ("100", "100%"), ("90", "90%"), ("80", "80%"), ("70", "70%"),
             ("60", "60%"), ("50", "50% (Default)"), ("40", "40%"),
@@ -137,9 +138,15 @@ class SettingsScreen(Screen, ConfigListScreen):
             choices=self.mini_opacity_choices,
             default=self.settings.get('mini_skin_opacity', '50'))
 
-        self.quality_entry = ConfigSelection(choices=self.quality_choices, default=self.settings.get('quality', '1080'))
-        self.results_entry = ConfigSelection(choices=self.results_choices,
-                                             default=self.settings.get('max_results', '30'))
+        self.quality_entry = ConfigSelection(
+            choices=self.quality_choices,
+            default=self.settings.get('quality', '1080'))
+
+        self.results_entry = ConfigSelection(
+            choices=self.results_choices,
+            default=self.settings.get('max_results', '30'))
+
+        # ===== Player choices =====
         self.player_choices = [
             ("4097", "GStreamer Media Player (Recommended)"),
             ("5002", "DVB Player (Original)"),
@@ -147,10 +154,11 @@ class SettingsScreen(Screen, ConfigListScreen):
             ("movieplayer", "MoviePlayer (Single play only)"),
         ]
 
-        self.player_entry = ConfigSelection(choices=self.player_choices,
-                                            default=self.settings.get('player_type', '4097'))
+        self.player_entry = ConfigSelection(
+            choices=self.player_choices,
+            default=self.settings.get('player_type', '4097'))
 
-        # Webcam timeout choices
+        # ===== Webcam timeout choices =====
         self.webcam_timeout_choices = [
             ("15", "15 seconds"),
             ("20", "20 seconds"),
@@ -164,19 +172,58 @@ class SettingsScreen(Screen, ConfigListScreen):
             choices=self.webcam_timeout_choices,
             default=self.settings.get('webcam_timeout', '20')
         )
+
+        # ===== Playback Mode =====
+        self.playback_mode_choices = [
+            ("ask", "Ask every time (show menu)"),
+            ("stream_360", "Stream 360p (first time ~30s, then instant)"),
+            ("play_1080", "Download & Play FHD 1080p (~20s)"),
+            ("play_720", "Download & Play HD 720p (~10s)"),
+            ("download_mp4", "Download MP4 to folder"),
+            ("download_mp3", "Download MP3 to folder"),
+        ]
+        self.playback_mode_entry = ConfigSelection(
+            choices=self.playback_mode_choices,
+            default=self.settings.get('playback_mode', 'ask')
+        )
+
+        # ===== Cache Path =====
+        self.cache_path_entry = ConfigSelection(
+            choices=[
+                ("/hdd/movie/YouTube_Cache/", "HDD - /hdd/movie/YouTube_Cache/"),
+                ("/usb/movie/YouTube_Cache/", "USB - /usb/movie/YouTube_Cache/"),
+                ("/media/hdd/YouTube_Cache/", "Media HDD - /media/hdd/YouTube_Cache/"),
+            ],
+            default=self.settings.get('cache_path', '/hdd/movie/YouTube_Cache/')
+        )
+
+        # ===== Auto-delete cache =====
+        self.auto_delete_entry = ConfigSelection(
+            choices=[
+                ("yes", "Yes - delete after playback"),
+                ("no", "No - keep files"),
+                ("ask", "Ask every time"),
+            ],
+            default=self.settings.get('auto_delete_cache', 'yes')
+        )
+
+        # ===== Prikaz verzije yt-dlp =====
+        current_ver = self.get_ytdlp_version()
+        self.version_entry = ConfigSelection(
+            choices=[(current_ver, current_ver)],
+            default=current_ver
+        )
+
+        # ===== Lista stavki u Settings =====
         self.list = []
         self.list.append(getConfigListEntry("Video Quality:", self.quality_entry))
         self.list.append(getConfigListEntry("Max Results per Search:", self.results_entry))
         self.list.append(getConfigListEntry("Mini Skin Opacity:", self.mini_opacity_entry))
         self.list.append(getConfigListEntry("Media Player Type:", self.player_entry))
         self.list.append(getConfigListEntry("Webcam Auto-Switch Timeout:", self.webcam_timeout_entry))
-
-        # Prikaz verzije yt-dlp (read-only)
-        current_ver = self.get_ytdlp_version()
-        self.version_entry = ConfigSelection(
-            choices=[(current_ver, current_ver)],
-            default=current_ver
-        )
+        self.list.append(getConfigListEntry("Default Playback Mode:", self.playback_mode_entry))
+        self.list.append(getConfigListEntry("Cache Path (FHD playback):", self.cache_path_entry))
+        self.list.append(getConfigListEntry("Auto-delete cache:", self.auto_delete_entry))
         self.list.append(getConfigListEntry("yt-dlp version (Info=Update):", self.version_entry))
 
         ConfigListScreen.__init__(self, self.list, session=self.session)
@@ -366,7 +413,11 @@ class SettingsScreen(Screen, ConfigListScreen):
         self.settings['max_results'] = self.results_entry.value
         self.settings['mini_skin_opacity'] = self.mini_opacity_entry.value
         self.settings['player_type'] = new_player
+        self.settings['playback_mode'] = self.playback_mode_entry.value
         self.settings['webcam_timeout'] = self.webcam_timeout_entry.value
+        self.settings['playback_mode'] = self.playback_mode_entry.value
+        self.settings['cache_path'] = self.cache_path_entry.value
+        self.settings['auto_delete_cache'] = self.auto_delete_entry.value
         save_settings(self.settings)
 
         # Ako je player_type promijenjen i nije movieplayer/4097/5002

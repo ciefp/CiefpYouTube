@@ -150,7 +150,7 @@ class DownloadSettingsScreen(ConfigListScreen, Screen):
         self.path_choices = [
             ("/hdd/movie/YouTube_Downloads/", "HDD - /hdd/movie/YouTube_Downloads/"),
             ("/hdd/YouTube_Downloads/", "HDD - /hdd/YouTube_Downloads/"),
-            ("/usb/movie/YouTube_Downloads/", "USB - /usb/movie/YouTube_Downloads/"),
+            ("/media/usb/YouTube_Downloads/", "Media USB - /media/usb/YouTube_Downloads/"),
             ("/media/hdd/YouTube_Downloads/", "Media HDD - /media/hdd/YouTube_Downloads/")
         ]
 
@@ -727,12 +727,72 @@ class YouTubeDownloaderScreen(Screen):
         # Čak i ako pukne, pomeri progres do te tačke
         self["progress_bar"].setValue(percent)
 
-    def download_complete(self, current, total):
-        self.is_downloading = False
-        self["status_line1"].setText("ALL DOWNLOADS COMPLETED!")
-        self["status_line2"].setText("Successfully downloaded " + str(total) + " file(s) to " + get_download_path())
-        self.update_info()
-    
+    def download_complete(self):
+        """Download gotov - pusti fajl."""
+        self["status"].setText("Download complete! Starting playback...")
+        self["progress_bar"].setValue(100)
+        self["info"].setText("")
+        from twisted.internet import reactor
+        reactor.callLater(1.0, self._play_file)
+
+    def _play_file(self):
+        """Pusti skinuti fajl i pokreni CacheManager monitoring."""
+        try:
+            # Proveri da li output_file postoji
+            if not hasattr(self, 'output_file') or not self.output_file:
+                print("[PreDownloadPlayer] Error: output_file not set!")
+                self["status"].setText("Error: output file not found")
+                from twisted.internet import reactor
+                reactor.callLater(2, self._safe_close)
+                return
+
+            if not os.path.exists(self.output_file):
+                print(f"[PreDownloadPlayer] Error: file does not exist: {self.output_file}")
+                self["status"].setText("Error: file not found on disk")
+                from twisted.internet import reactor
+                reactor.callLater(2, self._safe_close)
+                return
+
+            self.play_file_path = self.output_file
+
+            player_type = get_player_type()
+            print(f"[PreDownloadPlayer] Playing {self.output_file} with player_type: {player_type}")
+
+            # Zatvori screen PRE puštanja (da ne dođe do konflikta)
+            self.session.nav.playService(
+                eServiceReference(4097, 0, self.output_file)
+            )
+
+            # Postavi ime
+            service = self.session.nav.getCurrentService()
+            if service:
+                ref = service.getServiceReference()
+                if ref:
+                    ref.setName(self.title)
+
+            # Pokreni CacheManager monitoring
+            try:
+                cache_mgr = CacheManager()
+                cache_mgr.start_monitoring(self.play_file_path, self.session)
+            except Exception as e:
+                print(f"[PreDownloadPlayer] CacheManager error: {e}")
+
+            # Zatvori screen na kraju (bezbedno)
+            from twisted.internet import reactor
+            reactor.callLater(0.3, self._safe_close)
+
+        except Exception as e:
+            print(f"[PreDownloadPlayer] Error playing: {e}")
+            from twisted.internet import reactor
+            reactor.callLater(0.5, self._safe_close)
+
+    def _safe_close(self):
+        """Bezbedno zatvaranje screena - sprečava 'execing' grešku."""
+        try:
+            self.close()
+        except:
+            pass
+
     def play_and_download(self):
         """Play & Download"""
         if not self.selected_videos:

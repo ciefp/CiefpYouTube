@@ -3,6 +3,7 @@ from Screens.Screen import Screen
 from Components.ActionMap import ActionMap
 from Components.Label import Label
 from Components.MenuList import MenuList
+from Components.ProgressBar import ProgressBar
 from Screens.ChoiceBox import ChoiceBox
 from enigma import eServiceReference, eTimer
 import subprocess
@@ -11,6 +12,7 @@ import os
 import time
 import threading
 import json
+from Components.config import ConfigSelection, getConfigListEntry
 
 SETTINGS_FILE = "/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/settings.json"
 BROKEN_LINKS_LOG = "/tmp/ciefp_youtube_broken_links.log"
@@ -59,7 +61,6 @@ def set_cached_url(url, direct):
     cache = _load_cache()
     vid = _extract_video_id(url)
     cache[vid] = (time.time(), direct)
-    # Očisti stare
     now = time.time()
     cache = {k: v for k, v in cache.items() if now - v[0] < CACHE_TTL}
     _save_cache(cache)
@@ -148,7 +149,7 @@ def log_broken_link(url, title, error_msg=""):
 def extract_with_ytdlp(url):
     """
     Ekstrahuje direktni stream URL koristeći yt-dlp subprocess.
-    Forsira node kao JS runtime (brže od quickjs na ARM-u).
+    Forsira node kao JS runtime.
     Vraća (direct_url, error_msg).
     """
     quality = load_quality_setting()
@@ -188,6 +189,146 @@ def extract_with_ytdlp(url):
         return None, str(e)[:200]
 
 
+# ============================================================
+# CACHE MANAGER (singleton) - za auto-delete skinutih fajlova
+# ============================================================
+class CacheManager:
+    """Prati reprodukciju skinutih fajlova i briše ih po završetku (ako je auto-delete).
+    Singleton - jedna instanca za celu aplikaciju."""
+
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(CacheManager, cls).__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if self._initialized:
+            return
+        self._initialized = True
+        self.monitored_files = {}  # filepath -> {session, timer, last_position, stuck_count}
+
+    def start_monitoring(self, filepath, session):
+        """Počni da pratiš fajl - obriši ga kad reprodukcija završi."""
+        if not filepath or not os.path.exists(filepath):
+            print(f"[CacheManager] File not found: {filepath}")
+            return
+
+        print(f"[CacheManager] Monitoring: {filepath}")
+
+        timer = eTimer()
+        timer.callback.append(lambda: self._check_playback(filepath))
+
+        self.monitored_files[filepath] = {
+            'session': session,
+            'timer': timer,
+            'last_position': -1,
+            'stuck_count': 0,
+            'check_count': 0
+        }
+
+        timer.start(5000)  # svakih 5 sekundi
+
+    def _check_playback(self, filepath):
+        """Proveri da li je reprodukcija završena."""
+        info = self.monitored_files.get(filepath)
+        if not info:
+            return
+
+        session = info['session']
+        info['check_count'] += 1
+
+        try:
+            service = session.nav.getCurrentService()
+
+            if not service:
+                info['stuck_count'] += 1
+                # 2 provere bez servisa = reprodukcija završena
+                if info['stuck_count'] >= 2:
+                    self._handle_end(filepath)
+                return
+
+            seek = service.seek()
+            if seek:
+                position = seek.getPlayPosition()
+                length = seek.getLength()
+
+                if position and length:
+                    try:
+                        pos_secs = int(position[1] / 90000)
+                        len_secs = int(length[1] / 90000)
+
+                        # Ako je na kraju (u zadnjih 5s) - završeno
+                        if len_secs > 0 and pos_secs >= len_secs - 5:
+                            self._handle_end(filepath)
+                            return
+
+                        # Detekcija "stuck"
+                        if pos_secs == info['last_position']:
+                            info['stuck_count'] += 1
+                            if info['stuck_count'] >= 6:  # 30s bez napretka
+                                self._handle_end(filepath)
+                                return
+                        else:
+                            info['stuck_count'] = 0
+
+                        info['last_position'] = pos_secs
+                    except:
+                        pass
+
+        except Exception as e:
+            print(f"[CacheManager] Monitor error: {e}")
+
+    def _handle_end(self, filepath):
+        """Reprodukcija završena - odluči šta sa fajlom."""
+        info = self.monitored_files.pop(filepath, None)
+        if info and info['timer']:
+            try:
+                info['timer'].stop()
+            except:
+                pass
+
+        # Proveri auto-delete opciju
+        try:
+            with open(SETTINGS_FILE, 'r') as f:
+                data = json.load(f)
+                auto_delete = data.get('auto_delete_cache', 'yes')
+        except:
+            auto_delete = 'yes'
+
+        if auto_delete == 'yes':
+            self._delete_file(filepath)
+        elif auto_delete == 'ask':
+            session = info['session'] if info else None
+            if session:
+                from Screens.MessageBox import MessageBox
+                session.openWithCallback(
+                    lambda ans: self._do_delete(ans, filepath),
+                    MessageBox,
+                    f"Delete downloaded file?\n\n{os.path.basename(filepath)}",
+                    MessageBox.TYPE_YESNO
+                )
+        # 'no' - ostavi fajl
+
+    def _delete_file(self, filepath):
+        """Obriši fajl."""
+        try:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+                print(f"[CacheManager] Deleted: {filepath}")
+        except Exception as e:
+            print(f"[CacheManager] Error deleting: {e}")
+
+    def _do_delete(self, answer, filepath):
+        if answer:
+            self._delete_file(filepath)
+
+
+# ============================================================
+# CIEFP SHORTS PLAYER - izbor videa iz playliste
+# ============================================================
 class CiefpShortsPlayer(Screen):
     skin = """
         <screen position="center,center" size="1920,1080" title="CiefpYouTube Player" backgroundColor="#660033" flags="wfNoBorder">
@@ -236,8 +377,10 @@ class CiefpShortsPlayer(Screen):
 
     def okClicked(self):
         self.index = self["menu"].getSelectedIndex()
+        current_video = self.playlist[self.index]
 
         if self.webcam_mode:
+            # Webcam uvek ide preko ChoiceBox (single/playlist)
             choices = [
                 ("Play this video only", "single"),
                 ("Play entire playlist in sequence (Mini Skin)", "playlist")
@@ -246,12 +389,53 @@ class CiefpShortsPlayer(Screen):
                                           title="Select playback mode:", list=choices)
             return
 
-        choices = [
-            ("Play this video only", "single"),
-            ("Play entire playlist in sequence (Mini Skin)", "playlist")
-        ]
-        self.session.openWithCallback(self.choiceCallback, ChoiceBox,
-                                      title="Select playback mode:", list=choices)
+        # Učitaj default mode iz settings
+        try:
+            with open(SETTINGS_FILE, 'r') as f:
+                settings = json.load(f)
+                mode = settings.get('playback_mode', 'ask')
+        except:
+            mode = 'ask'
+
+        # Ako je "ask" - prikaži ChoiceBox
+        if mode == 'ask':
+            choices = [
+                ("▶ Play 360p (stream, first time ~30s, then instant)", "stream_360"),
+                ("▶ Play FHD 1080p (download first, ~20s)", "play_1080"),
+                ("▶ Play HD 720p (download first, ~10s)", "play_720"),
+                ("⬇ Download MP4", "download_mp4"),
+                ("⬇ Download MP3", "download_mp3"),
+                ("▶ Play entire playlist (360p stream)", "playlist"),
+            ]
+            self.session.openWithCallback(self.choiceCallback, ChoiceBox,
+                                          title="Select playback mode:", list=choices)
+            return
+
+        # Inače - direktno primeni izabrani mode
+        self._execute_playback_mode(mode, current_video)
+
+    def _execute_playback_mode(self, mode, video):
+        """Izvršava playback mode bez ChoiceBox-a."""
+        if mode == "stream_360":
+            self.closeAndPlay(video.get('url'), video.get('title', 'Video'))
+
+        elif mode == "play_1080":
+            self.session.open(PreDownloadPlayer, video, quality="1080")
+
+        elif mode == "play_720":
+            self.session.open(PreDownloadPlayer, video, quality="720")
+
+        elif mode == "download_mp4":
+            from .ytdownloader import YouTubeDownloaderScreen
+            self.session.open(YouTubeDownloaderScreen, selected_videos=[video])
+
+        elif mode == "download_mp3":
+            from .ytdownloader import YouTubeDownloaderScreen
+            self.session.open(YouTubeDownloaderScreen, selected_videos=[video])
+
+        else:
+            # Fallback - stream 360p
+            self.closeAndPlay(video.get('url'), video.get('title', 'Video'))
 
     def webcam_choice_callback(self, answer):
         if answer:
@@ -260,44 +444,62 @@ class CiefpShortsPlayer(Screen):
                 current_video = self.playlist[self.index]
                 url = current_video.get('url')
                 title = current_video.get('title', 'Video')
-                self.start_extract_and_play(url, title)
+                self.closeAndPlay(url, title)
             elif mode == "playlist":
                 self.session.open(CiefpWebcamPlaylistPlayer, self.playlist, self.index, self.bouquet_version)
 
     def choiceCallback(self, answer):
-        if answer:
-            mode = answer[1]
-            if mode == "single":
-                current_video = self.playlist[self.index]
-                url = current_video.get('url')
-                title = current_video.get('title', 'Video')
-                self.start_extract_and_play(url, title)
-            elif mode == "playlist":
-                self.session.open(CiefpPlaylistPlayer, self.playlist, self.index)
-
-
-    def start_extract_and_play(self, url, title):
-        """Pokreće ekstrakciju u thread-u - Enigma2 ne blokira."""
-        cached = get_cached_url(url)
-        if cached:
-            print(f"[CiefpYouTube] Using cached URL for {title[:40]}")
-            self._play_direct(cached, title)
+        if not answer:
             return
 
+        mode = answer[1]
+        current_video = self.playlist[self.index]
+
+        if mode == "stream_360":
+            self.closeAndPlay(current_video.get('url'), current_video.get('title', 'Video'))
+
+        elif mode == "play_1080":
+            self.session.open(PreDownloadPlayer, current_video, quality="1080")
+
+        elif mode == "play_720":
+            self.session.open(PreDownloadPlayer, current_video, quality="720")
+
+        elif mode == "download_mp4":
+            from .ytdownloader import YouTubeDownloaderScreen
+            self.session.open(YouTubeDownloaderScreen, selected_videos=[current_video])
+
+        elif mode == "download_mp3":
+            from .ytdownloader import YouTubeDownloaderScreen
+            self.session.open(YouTubeDownloaderScreen, selected_videos=[current_video])
+
+        elif mode == "playlist":
+            self.session.open(CiefpPlaylistPlayer, self.playlist, self.index)
+
+    def closeAndPlay(self, orig_url, title):
+        """Pusti stream preko našeg extract_with_ytdlp (u thread-u, sa node).
+        Ne koristi YT-DLP:// protokol jer on blokira glavni thread i koristi quickjs."""
+        # Proveri keš
+        cached = get_cached_url(orig_url)
+        if cached:
+            print(f"[CiefpYouTube] Using cached URL for {title[:40]}")
+            self._play_direct_url(cached, title)
+            return
+
+        # Nema keša - ekstrahuj u thread-u
         self["status"].setText("Extracting stream URL (please wait)...")
 
         def worker():
-            direct, err = extract_with_ytdlp(url)
+            direct, err = extract_with_ytdlp(orig_url)
             from twisted.internet import reactor
             if direct:
-                set_cached_url(url, direct)
-                reactor.callFromThread(self._play_direct, direct, title)
+                set_cached_url(orig_url, direct)
+                reactor.callFromThread(self._play_direct_url, direct, title)
             else:
-                reactor.callFromThread(self._play_error, url, title, err)
+                reactor.callFromThread(self._play_error_short, orig_url, title, err)
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _play_direct(self, direct_url, title):
+    def _play_direct_url(self, direct_url, title):
         """Pusti već ekstrahovani direktni URL."""
         try:
             player_type = get_player_type()
@@ -308,39 +510,37 @@ class CiefpShortsPlayer(Screen):
                 ref = eServiceReference(4097, 0, direct_url)
                 ref.setName(title)
                 self.session.openWithCallback(self.close, MoviePlayer, ref)
-            else:
+            elif player_type == "5001":
+                self.close()
+                time.sleep(0.3)
+                ref = eServiceReference(5001, 0, direct_url)
+                ref.setName(title)
+                self.session.nav.playService(ref)
+            elif player_type == "5002":
+                self.close()
+                time.sleep(0.3)
+                ref = eServiceReference(5002, 0, direct_url)
+                ref.setName(title)
+                self.session.nav.playService(ref)
+            else:  # 4097
                 self.close()
                 time.sleep(0.3)
                 ref = eServiceReference(4097, 0, direct_url)
                 ref.setName(title)
                 self.session.nav.playService(ref)
         except Exception as e:
-            print(f"[CiefpYouTube] Error in _play_direct: {e}")
+            print(f"[CiefpYouTube] Error in _play_direct_url: {e}")
 
-    def _play_error(self, orig_url, title, err):
-        """Fallback: probaj preko YT-DLP:// protokola."""
-        print(f"[CiefpYouTube] Subprocess failed ({err}); falling back to YT-DLP://")
+    def _play_error_short(self, orig_url, title, err):
+        """Fallback ako ekstrakcija ne uspe."""
+        print(f"[CiefpYouTube] Extraction failed: {err}")
         log_broken_link(orig_url, title, str(err)[:100])
-        self["status"].setText("Using fallback YT-DLP:// (may be slow)...")
-
-        try:
-            player_type = get_player_type()
-            yt_service_url = f"YT-DLP://{orig_url}"
-            if player_type == "movieplayer":
-                from Screens.InfoBar import MoviePlayer
-                ref = eServiceReference(4097, 0, yt_service_url)
-                ref.setName(title)
-                self.session.openWithCallback(self.close, MoviePlayer, ref)
-            else:
-                self.close()
-                time.sleep(0.3)
-                ref = eServiceReference(4097, 0, yt_service_url)
-                ref.setName(title)
-                self.session.nav.playService(ref)
-        except Exception as e:
-            print(f"[CiefpYouTube] Fallback failed: {e}")
+        self["status"].setText(f"Error: {str(err)[:50]}")
 
 
+# ============================================================
+# CIEFP PLAYLIST PLAYER - sekvencijalna reprodukcija playliste
+# ============================================================
 class CiefpPlaylistPlayer(Screen):
     def __init__(self, session, playlist, start_index=0):
         alpha_hex = get_mini_skin_opacity()
@@ -390,27 +590,6 @@ class CiefpPlaylistPlayer(Screen):
 
         self.startExtraction()
 
-        # ISPRAVNO - CiefpPlaylistPlayer nema webcam_mode:
-        self.preload_playlist(self.playlist, count=2)
-
-    def preload_playlist(self, playlist, start_index=0, count=2):
-        """Preload trenutnog i sledećeg videa (ne unapred sve)."""
-
-        def worker():
-            # Uzmi trenutni + sledeći (start_index, start_index+1)
-            end = min(start_index + count, len(playlist))
-            for video in playlist[start_index:end]:
-                url = video.get('url')
-                if not url:
-                    continue
-                if not get_cached_url(url):
-                    direct, err = extract_with_ytdlp(url)
-                    if direct:
-                        set_cached_url(url, direct)
-                        print(f"[CiefpYouTube] Preloaded: {video.get('title', '')[:40]}")
-
-        threading.Thread(target=worker, daemon=True).start()
-
     def updateTime(self):
         try:
             import time
@@ -437,7 +616,7 @@ class CiefpPlaylistPlayer(Screen):
 
         self["playlist_info"].setText(f"Song: {self.index + 1} of {len(self.playlist)}")
 
-        # Preload SAMO sledeći video (trenutni se ekstrahuje odmah ispod)
+        # Preload SAMO sledeći video
         if self.index + 1 < len(self.playlist):
             self.preload_next(self.playlist, self.index + 1)
 
@@ -461,8 +640,7 @@ class CiefpPlaylistPlayer(Screen):
         threading.Thread(target=worker, daemon=True).start()
 
     def preload_next(self, playlist, next_index):
-        """Preload samo jednog videa (sledećeg)."""
-
+        """Preload samo sledećeg videa."""
         def worker():
             if next_index >= len(playlist):
                 return
@@ -476,24 +654,6 @@ class CiefpPlaylistPlayer(Screen):
             if direct:
                 set_cached_url(url, direct)
                 print(f"[CiefpYouTube] Preloaded next: {video.get('title', '')[:40]}")
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def preload_playlist(self, playlist, start_index=0, count=2):
-        """Preload trenutnog i sledećeg videa u pozadinskom thread-u."""
-
-        def worker():
-            end = min(start_index + count, len(playlist))
-            for video in playlist[start_index:end]:
-                url = video.get('url')
-                if not url:
-                    continue
-                if not get_cached_url(url):
-                    direct, err = extract_with_ytdlp(url)
-                    if direct:
-                        set_cached_url(url, direct)
-                        print(f"[CiefpYouTube] Preloaded: {video.get('title', '')[:40]}")
-
         threading.Thread(target=worker, daemon=True).start()
 
     def _play_direct(self, direct_url, title):
@@ -591,6 +751,9 @@ class CiefpPlaylistPlayer(Screen):
         self.close()
 
 
+# ============================================================
+# CIEFP WEBCAM PLAYLIST PLAYER
+# ============================================================
 class CiefpWebcamPlaylistPlayer(Screen):
     def __init__(self, session, playlist, start_index=0, bouquet_version=""):
         alpha_hex = get_mini_skin_opacity()
@@ -675,11 +838,10 @@ class CiefpWebcamPlaylistPlayer(Screen):
 
         self["playlist_info"].setText(f"Camera: {self.index + 1} of {len(self.playlist)}")
 
-        # Preload sledeće kamere u pozadini
+        # Preload sledeće kamere
         if self.index + 1 < len(self.playlist):
             self.preload_next(self.playlist, self.index + 1)
 
-        # Provjeri keš za trenutnu kameru
         cached = get_cached_url(url)
         if cached:
             self._play_direct(cached, title)
@@ -698,7 +860,6 @@ class CiefpWebcamPlaylistPlayer(Screen):
 
     def preload_next(self, playlist, next_index):
         """Preload samo sledeće kamere."""
-
         def worker():
             if next_index >= len(playlist):
                 return
@@ -712,7 +873,6 @@ class CiefpWebcamPlaylistPlayer(Screen):
             if direct:
                 set_cached_url(url, direct)
                 print(f"[CiefpYouTube] Preloaded next cam: {video.get('title', '')[:40]}")
-
         threading.Thread(target=worker, daemon=True).start()
 
     def _play_direct(self, direct_url, title):
@@ -861,4 +1021,316 @@ class CiefpWebcamPlaylistPlayer(Screen):
         if self.countdown_timer:
             self.countdown_timer.stop()
         self.session.nav.stopService()
+        self.close()
+
+
+# ============================================================
+# PRE-DOWNLOAD PLAYER - skida FHD pa pušta
+# ============================================================
+class PreDownloadPlayer(Screen):
+    """Screen koji skida FHD fajl preko yt-dlp pa ga pušta.
+    Prikazuje progress bar dok skida, pa automatski startuje reprodukciju."""
+
+    skin = """
+        <screen position="center,center" size="1280,720" title="CiefpYouTube FHD Preload" backgroundColor="#660033" flags="wfNoBorder">
+            <eLabel position="0,0" size="1280,100" backgroundColor="#1a1a1a" zPosition="-1" />
+            <eLabel text="..:: CiefpYouTube FHD Preload ::.." position="40,25" size="800,50" font="Regular;32" foregroundColor="#ffcc00" backgroundColor="#1a1a1a" transparent="1" />
+
+            <widget name="title_label" position="40,140" size="1200,60" font="Regular;28" foregroundColor="#ffffff" backgroundColor="#1a1a1a" transparent="1" />
+
+            <eLabel position="40,220" size="1200,30" backgroundColor="#000000" zPosition="1" />
+            <widget name="progress_bar" position="40,220" size="1200,30" pixmap="/usr/lib/enigma2/python/Plugins/Extensions/CiefpYouTube/icons/progress.png" backgroundColor="#000000" zPosition="2" />
+
+            <widget name="status" position="40,270" size="1200,40" font="Regular;24" foregroundColor="#00ffcc" backgroundColor="#1a1a1a" transparent="1" />
+            <widget name="info" position="40,320" size="1200,40" font="Regular;22" foregroundColor="#ffcc00" backgroundColor="#1a1a1a" transparent="1" />
+
+            <eLabel position="0,620" size="1280,100" backgroundColor="#1a1a1a" zPosition="-1" />
+            <eLabel position="40,650" size="30,30" backgroundColor="#ff0000" zPosition="2" />
+            <eLabel text="EXIT: Cancel download" position="85,650" size="600,40" font="Regular;24" foregroundColor="#ffffff" backgroundColor="#1a1a1a" transparent="1" />
+        </screen>
+    """
+
+    def __init__(self, session, video, quality="1080"):
+        Screen.__init__(self, session)
+        self.session = session
+        self.video = video
+        self.quality = quality
+        self.url = video.get('url')
+        self.title = video.get('title', 'Unknown')
+        self.download_path = self._get_cache_path()
+        self.output_file = None
+        self.download_process = None
+        self.is_cancelled = False
+        self.play_file_path = None
+
+        self["title_label"] = Label(self.title[:80])
+        self["progress_bar"] = ProgressBar()
+        self["status"] = Label("Preparing download...")
+        self["info"] = Label("")
+
+        self["actions"] = ActionMap(["SetupActions"], {
+            "cancel": self.cancel_download,
+        }, -1)
+
+        self.onLayoutFinish.append(self.start_download)
+
+    # ==================== CACHE PATH ====================
+    def _get_cache_path(self):
+        """Uzima cache path iz settings, kreira folder ako ne postoji."""
+        try:
+            with open(SETTINGS_FILE, 'r') as f:
+                data = json.load(f)
+                path = data.get('cache_path', '/hdd/movie/YouTube_Cache/')
+        except:
+            path = '/hdd/movie/YouTube_Cache/'
+
+        if not os.path.exists(path):
+            try:
+                os.makedirs(path)
+            except Exception as e:
+                print(f"[PreDownloadPlayer] Cannot create {path}: {e}, using /tmp fallback")
+                path = '/tmp/ciefp_yt_cache/'
+                if not os.path.exists(path):
+                    try:
+                        os.makedirs(path)
+                    except:
+                        pass
+        return path
+
+    # ==================== DOWNLOAD ====================
+    def start_download(self):
+        """Pokreće download u pozadinskom thread-u (ne blokira UI)."""
+        threading.Thread(target=self._download_worker, daemon=True).start()
+
+    def _download_worker(self):
+        """Thread koji skida fajl preko yt-dlp."""
+        safe_title = self._safe_filename(self.title)
+        self.output_file = os.path.join(self.download_path, f"{safe_title}.mp4")
+        output_template = os.path.join(self.download_path, f"{safe_title}.%(ext)s")
+
+        # Format prema kvalitetu - forsira H.264 (avc1) za Enigma2 kompatibilnost
+        if self.quality == "1080":
+            fmt = ('bestvideo[height<=1080][vcodec^=avc1]+bestaudio[ext=m4a]/'
+                   'bestvideo[height<=1080][vcodec^=avc1]+bestaudio/'
+                   'best[height<=1080][vcodec^=avc1]/best')
+        elif self.quality == "720":
+            fmt = ('bestvideo[height<=720][vcodec^=avc1]+bestaudio[ext=m4a]/'
+                   'bestvideo[height<=720][vcodec^=avc1]+bestaudio/'
+                   'best[height<=720][vcodec^=avc1]/best')
+        else:
+            fmt = 'best[height<=480]/best'
+
+        cmd = [
+            'yt-dlp',
+            '-f', fmt,
+            '--merge-output-format', 'mp4',
+            '-o', output_template,
+            '--no-warnings',
+            '--newline',
+            '--retries', '3',
+            '--no-overwrites',
+            '--no-playlist',
+            '--js-runtimes', 'node',
+            self.url
+        ]
+
+        try:
+            from twisted.internet import reactor
+
+            self.download_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1
+            )
+
+            for line in self.download_process.stdout:
+                if self.is_cancelled:
+                    try:
+                        self.download_process.kill()
+                    except:
+                        pass
+                    return
+
+                line = line.strip()
+
+                if '[download]' in line and '%' in line:
+                    try:
+                        percent_str = line.split('%')[0].split()[-1]
+                        percent = float(percent_str)
+                        reactor.callFromThread(self.update_progress, percent, line)
+                    except:
+                        pass
+                elif '[Merger]' in line:
+                    reactor.callFromThread(self.update_status, "Merging video+audio (ffmpeg)...")
+                elif '[download]' in line and 'Destination' in line:
+                    reactor.callFromThread(self.update_status, "Starting download...")
+
+            self.download_process.wait()
+
+            if self.is_cancelled:
+                return
+
+            if os.path.exists(self.output_file):
+                reactor.callFromThread(self.download_complete)
+            else:
+                found = False
+                try:
+                    for f in os.listdir(self.download_path):
+                        if safe_title in f and (f.endswith('.mp4') or f.endswith('.mkv') or f.endswith('.webm')):
+                            self.output_file = os.path.join(self.download_path, f)
+                            found = True
+                            break
+                except:
+                    pass
+
+                if found:
+                    reactor.callFromThread(self.download_complete)
+                else:
+                    reactor.callFromThread(self.download_failed, "Output file not found after download")
+
+        except Exception as e:
+            from twisted.internet import reactor
+            reactor.callFromThread(self.download_failed, str(e)[:100])
+
+    # ==================== UI CALLBACKS ====================
+    def update_progress(self, percent, raw_line):
+        self["progress_bar"].setValue(int(percent))
+        try:
+            if ' at ' in raw_line:
+                speed_part = raw_line.split(' at ')[1].split(' ETA')[0].strip()
+                self["info"].setText(f"Speed: {speed_part}")
+        except:
+            pass
+
+    def update_status(self, text):
+        self["status"].setText(text)
+
+    def download_complete(self):
+        """Download gotov - pusti fajl."""
+        print("[PreDownloadPlayer-DEBUG] download_complete() CALLED")
+        print(f"[PreDownloadPlayer-DEBUG] output_file = {self.output_file}")
+        print(f"[PreDownloadPlayer-DEBUG] file exists = {os.path.exists(self.output_file) if self.output_file else 'N/A'}")
+
+        self["status"].setText("Download complete! Starting playback...")
+        self["progress_bar"].setValue(100)
+        self["info"].setText("")
+
+        # POZOVI DIREKTNO bez callLater
+        print("[PreDownloadPlayer-DEBUG] Calling _play_file() directly...")
+        self._play_file()
+
+    def download_failed(self, error_msg):
+        """Greška - prikaži i zatvori."""
+        self["status"].setText(f"Download failed: {error_msg}")
+        try:
+            log_broken_link(self.url, self.title, f"PreDownload failed: {error_msg}")
+        except:
+            pass
+        from twisted.internet import reactor
+        reactor.callLater(3, self.close)
+
+    # ==================== PLAYBACK ====================
+    def _play_file(self):
+        """Pusti skinuti fajl i pokreni CacheManager monitoring."""
+        print("[PreDownloadPlayer-DEBUG] _play_file() CALLED")
+
+        try:
+            if not hasattr(self, 'output_file') or not self.output_file:
+                print("[PreDownloadPlayer-DEBUG] ERROR: output_file not set!")
+                self["status"].setText("Error: output file not found")
+                return
+
+            print(f"[PreDownloadPlayer-DEBUG] output_file = {self.output_file}")
+
+            if not os.path.exists(self.output_file):
+                print(f"[PreDownloadPlayer-DEBUG] ERROR: file does not exist: {self.output_file}")
+                self["status"].setText("Error: file not found on disk")
+                return
+
+            try:
+                size = os.path.getsize(self.output_file)
+                print(f"[PreDownloadPlayer-DEBUG] file size = {size} bytes ({size / 1024 / 1024:.2f} MB)")
+            except Exception as e:
+                print(f"[PreDownloadPlayer-DEBUG] Cannot get file size: {e}")
+
+            self.play_file_path = self.output_file
+
+            player_type = get_player_type()
+            print(f"[PreDownloadPlayer-DEBUG] player_type = '{player_type}'")
+
+            # Zatvori screen PRE puštanja
+            print("[PreDownloadPlayer-DEBUG] Closing screen BEFORE playService...")
+            self.close()
+            print("[PreDownloadPlayer-DEBUG] Screen closed")
+
+            # Kratka pauza da se screen zatvori
+            import time
+            time.sleep(0.3)
+
+            # Pusti fajl
+            print(f"[PreDownloadPlayer-DEBUG] Creating eServiceReference(4097, 0, '{self.output_file}')")
+            ref = eServiceReference(4097, 0, self.output_file)
+            ref.setName(self.title)
+
+            print("[PreDownloadPlayer-DEBUG] Calling session.nav.playService()...")
+            self.session.nav.playService(ref)
+            print("[PreDownloadPlayer-DEBUG] playService() returned OK")
+
+            # CacheManager
+            try:
+                print("[PreDownloadPlayer-DEBUG] Starting CacheManager...")
+                cache_mgr = CacheManager()
+                cache_mgr.start_monitoring(self.play_file_path, self.session)
+                print("[PreDownloadPlayer-DEBUG] CacheManager started")
+            except Exception as e:
+                print(f"[PreDownloadPlayer-DEBUG] CacheManager error: {e}")
+
+        except Exception as e:
+            print(f"[PreDownloadPlayer-DEBUG] EXCEPTION in _play_file: {e}")
+            import traceback
+            traceback.print_exc()
+            
+    # ==================== UTILS ====================
+    def _safe_close(self):
+        """Bezbedno zatvaranje screena - sprečava 'execing' grešku."""
+        print("[PreDownloadPlayer-DEBUG] _safe_close() CALLED")
+        try:
+            self.close()
+            print("[PreDownloadPlayer-DEBUG] self.close() OK")
+        except Exception as e:
+            print(f"[PreDownloadPlayer-DEBUG] close() error: {e}")
+    # ==================== UTILS ====================
+    def _safe_filename(self, title):
+        """Konvertuje naslov u siguran naziv fajla."""
+        safe = "".join([c for c in title if c.isalnum() or c in (' ', '-', '_', '.', "'")]).strip()
+        if len(safe) > 100:
+            safe = safe[:100]
+        return safe
+
+    # ==================== CANCEL ====================
+    def cancel_download(self):
+        """Prekida download i briše delimičan fajl."""
+        print("[PreDownloadPlayer] Cancelling download...")
+        self.is_cancelled = True
+
+        if self.download_process:
+            try:
+                self.download_process.kill()
+            except:
+                pass
+
+        try:
+            if self.output_file and os.path.exists(self.output_file):
+                os.remove(self.output_file)
+            for f in os.listdir(self.download_path):
+                if '.part' in f or '.ytdl' in f:
+                    try:
+                        os.remove(os.path.join(self.download_path, f))
+                    except:
+                        pass
+        except Exception as e:
+            print(f"[PreDownloadPlayer] Cleanup error: {e}")
+
         self.close()
